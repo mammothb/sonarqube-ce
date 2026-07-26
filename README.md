@@ -22,7 +22,7 @@ Run a SonarQube Community Edition code analysis in an ephemeral Docker container
 ## Inputs
 
 | Input | Required | Default | Description |
-|-------|----------|---------|-------------|
+| --- | --- | --- | --- |
 | `sonar-project-name` | No | `${{ github.event.repository.name }}` | SonarQube project name (also used as project key) |
 | `sonar-source-path` | No | `.` | Source path from git root |
 | `sonar-server-image` | No | `sonarqube:25.5.0.107428-community` | SonarQube CE Docker image |
@@ -37,7 +37,7 @@ Run a SonarQube Community Edition code analysis in an ephemeral Docker container
 ## Outputs
 
 | Output | Description |
-|--------|-------------|
+| --- | --- |
 | `analysis-summary` | Analysis summary markdown (also written to step summary) |
 | `overall-reports-artifact-id` | Overall reports artifact ID (when `reports-scopes` includes `"overall"`) |
 | `new-reports-artifact-id` | New-code reports artifact ID (when `reports-scopes` includes `"new"`) |
@@ -67,15 +67,15 @@ jobs:
 
 1. Pulls SonarQube Community Edition and Scanner CLI Docker images (cached
    between runs)
-2. Starts an ephemeral SonarQube instance on a Docker network
-3. Waits for boot, changes the default admin password
-4. Creates a project and generates a user token
-5. Runs the scanner against your source code
-6. Waits for the quality gate to compute
-7. Fetches metrics, issues, and security hotspots
-8. Optionally generates markdown reports and uploads them as workflow artifacts
-9. Writes a step summary and optionally posts a PR comment
-10. Stops and removes the container (always, even on failure)
+1. Starts an ephemeral SonarQube instance on a Docker network
+1. Waits for boot, changes the default admin password
+1. Creates a project and generates a user token
+1. Runs the scanner against your source code
+1. Waits for the quality gate to compute
+1. Fetches metrics, issues, and security hotspots
+1. Optionally generates markdown reports and uploads them as workflow artifacts
+1. Writes a step summary and optionally posts a PR comment
+1. Stops and removes the container (always, even on failure)
 
 ### Pre-scan scripts
 
