@@ -250,4 +250,136 @@ describe("SonarQube", () => {
       );
     });
   });
+
+  // ── createProject ─────────────────────────────────────────────────
+
+  describe("createProject", () => {
+    it("sends POST with name and project key", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "Son@rless123",
+      });
+      await sq.createProject("my-project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:9000/api/projects/create");
+      expect(init.method).toBe("POST");
+      expect(init.body).toContain("name=my-project");
+      expect(init.body).toContain("project=my-project");
+      expect(init.headers.Authorization).toBe(
+        `Basic ${Buffer.from("admin:Son@rless123").toString("base64")}`,
+      );
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          text: async () => "Project already exists",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.createProject("dup")).rejects.toThrow(
+        "projects/create failed [400]: Project already exists",
+      );
+    });
+  });
+
+  // ── setHomepage ───────────────────────────────────────────────────
+
+  describe("setHomepage", () => {
+    it("sends POST to update_visibility with public", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "Son@rless123",
+      });
+      await sq.setHomepage("my-project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:9000/api/projects/update_visibility");
+      expect(init.method).toBe("POST");
+      expect(init.body).toContain("project=my-project");
+      expect(init.body).toContain("visibility=public");
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 404,
+          text: async () => "Project not found",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.setHomepage("missing")).rejects.toThrow(
+        "projects/update_visibility failed [404]: Project not found",
+      );
+    });
+  });
+
+  // ── generateToken ─────────────────────────────────────────────────
+
+  describe("generateToken", () => {
+    it("sends POST and returns token from response", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ token: "squ_abc123xyz" }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "Son@rless123",
+      });
+      const token = await sq.generateToken("scan-token");
+
+      expect(token).toBe("squ_abc123xyz");
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:9000/api/user_tokens/generate");
+      expect(init.method).toBe("POST");
+      expect(init.body).toContain("name=scan-token");
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          text: async () => "Token name already exists",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.generateToken("dup")).rejects.toThrow(
+        "user_tokens/generate failed [400]: Token name already exists",
+      );
+    });
+  });
 });

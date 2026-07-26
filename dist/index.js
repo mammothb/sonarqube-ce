@@ -28426,6 +28426,55 @@ class SonarQube {
             throw new Error(`change_password failed [${resp.status}]: ${await resp.text()}`);
         }
     }
+    // ── Projects ────────────────────────────────────────────────────
+    /** POST /api/projects/create */
+    async createProject(name) {
+        const resp = await fetch(`${this.baseUrl}/api/projects/create`, {
+            method: "POST",
+            headers: {
+                Authorization: basicAuth(this.auth.user, this.auth.pass),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ name, project: name }).toString(),
+        });
+        if (!resp.ok) {
+            throw new Error(`projects/create failed [${resp.status}]: ${await resp.text()}`);
+        }
+    }
+    /** POST /api/projects/update_visibility (public so homepage works) */
+    async setHomepage(project) {
+        const resp = await fetch(`${this.baseUrl}/api/projects/update_visibility`, {
+            method: "POST",
+            headers: {
+                Authorization: basicAuth(this.auth.user, this.auth.pass),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+                project,
+                visibility: "public",
+            }).toString(),
+        });
+        if (!resp.ok) {
+            throw new Error(`projects/update_visibility failed [${resp.status}]: ${await resp.text()}`);
+        }
+    }
+    // ── Tokens ───────────────────────────────────────────────────────
+    /** POST /api/user_tokens/generate — returns the token string */
+    async generateToken(name) {
+        const resp = await fetch(`${this.baseUrl}/api/user_tokens/generate`, {
+            method: "POST",
+            headers: {
+                Authorization: basicAuth(this.auth.user, this.auth.pass),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ name }).toString(),
+        });
+        if (!resp.ok) {
+            throw new Error(`user_tokens/generate failed [${resp.status}]: ${await resp.text()}`);
+        }
+        const data = (await resp.json());
+        return data.token;
+    }
     // ── Wait helpers ───────────────────────────────────────────────────
     /** Poll /api/system/status until UP, or throw after timeoutSec seconds */
     async waitForUp(timeoutSec) {
@@ -28451,7 +28500,7 @@ class SonarQube {
  * Replaced with full orchestrator in F13.
  */
 async function run() {
-    const networkName = "scanwise";
+    const networkName = "sq-network";
     const containerName = "sonar-server";
     try {
         const inputs = parseInputs();
@@ -28480,7 +28529,19 @@ async function run() {
         // Verify new credentials work
         sq.setAuth({ user: "admin", pass: newPassword });
         const status = await sq.systemStatus();
-        info(`Verified — system status: ${status.status}`);
+        info(`Password change verified — system status: ${status.status}`);
+        // ── Project + Token ───────────────────────────────────────────
+        info(`Creating project "${inputs.sonarProjectName}" …`);
+        await sq.createProject(inputs.sonarProjectName);
+        await sq.setHomepage(inputs.sonarProjectName);
+        info("Project created.");
+        info("Generating user token …");
+        const token = await sq.generateToken("e2e-token");
+        info(`Token: ${token.slice(0, 8)}…`);
+        // Verify token works for API access (token as username, empty password)
+        const tokenSq = new SonarQube(baseUrl, { user: token, pass: "" });
+        const tokenStatus = await tokenSq.systemStatus();
+        info(`Token auth verified — system status: ${tokenStatus.status}`);
     }
     catch (error) {
         if (error instanceof Error) {

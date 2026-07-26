@@ -55,6 +55,66 @@ export class SonarQube {
     }
   }
 
+  // ── Projects ────────────────────────────────────────────────────
+
+  /** POST /api/projects/create */
+  async createProject(name: string): Promise<void> {
+    const resp = await fetch(`${this.baseUrl}/api/projects/create`, {
+      method: "POST",
+      headers: {
+        Authorization: basicAuth(this.auth.user, this.auth.pass),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ name, project: name }).toString(),
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `projects/create failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+  }
+
+  /** POST /api/projects/update_visibility (public so homepage works) */
+  async setHomepage(project: string): Promise<void> {
+    const resp = await fetch(`${this.baseUrl}/api/projects/update_visibility`, {
+      method: "POST",
+      headers: {
+        Authorization: basicAuth(this.auth.user, this.auth.pass),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        project,
+        visibility: "public",
+      }).toString(),
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `projects/update_visibility failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+  }
+
+  // ── Tokens ───────────────────────────────────────────────────────
+
+  /** POST /api/user_tokens/generate — returns the token string */
+  async generateToken(name: string): Promise<string> {
+    const resp = await fetch(`${this.baseUrl}/api/user_tokens/generate`, {
+      method: "POST",
+      headers: {
+        Authorization: basicAuth(this.auth.user, this.auth.pass),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ name }).toString(),
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `user_tokens/generate failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+    const data = (await resp.json()) as { token: string };
+    return data.token;
+  }
+
   // ── Wait helpers ───────────────────────────────────────────────────
 
   /** Poll /api/system/status until UP, or throw after timeoutSec seconds */

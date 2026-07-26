@@ -15,7 +15,7 @@ import { SonarQube } from "./sonarqube.js";
  * Replaced with full orchestrator in F13.
  */
 export async function run(): Promise<void> {
-  const networkName = "scanwise";
+  const networkName = "sq-network";
   const containerName = "sonar-server";
 
   try {
@@ -52,7 +52,22 @@ export async function run(): Promise<void> {
     // Verify new credentials work
     sq.setAuth({ user: "admin", pass: newPassword });
     const status = await sq.systemStatus();
-    core.info(`Verified — system status: ${status.status}`);
+    core.info(`Password change verified — system status: ${status.status}`);
+
+    // ── Project + Token ───────────────────────────────────────────
+    core.info(`Creating project "${inputs.sonarProjectName}" …`);
+    await sq.createProject(inputs.sonarProjectName);
+    await sq.setHomepage(inputs.sonarProjectName);
+    core.info("Project created.");
+
+    core.info("Generating user token …");
+    const token = await sq.generateToken("e2e-token");
+    core.info(`Token: ${token.slice(0, 8)}…`);
+
+    // Verify token works for API access (token as username, empty password)
+    const tokenSq = new SonarQube(baseUrl, { user: token, pass: "" });
+    const tokenStatus = await tokenSq.systemStatus();
+    core.info(`Token auth verified — system status: ${tokenStatus.status}`);
   } catch (error) {
     if (error instanceof Error) {
       core.setFailed(error.message);

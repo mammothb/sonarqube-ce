@@ -111,10 +111,10 @@ describe("Docker", () => {
     it("includes --network when provided", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await dockerRun({ image: "alpine", network: "scanwise" });
+      await dockerRun({ image: "alpine", network: "sq-network" });
 
       expect(execMock.mock.calls[0][0]).toBe(
-        "docker run -d --network 'scanwise' 'alpine'",
+        "docker run -d --network 'sq-network' 'alpine'",
       );
     });
 
@@ -167,7 +167,7 @@ describe("Docker", () => {
         image: "sonarqube:lts-community",
         name: "sonar-server",
         port: "9234:9000",
-        network: "scanwise",
+        network: "sq-network",
         rm: true,
         env: { SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true" },
         volume: "/src:/usr/src",
@@ -177,7 +177,7 @@ describe("Docker", () => {
         "docker run -d " +
           "--name 'sonar-server' " +
           "-p '9234:9000' " +
-          "--network 'scanwise' " +
+          "--network 'sq-network' " +
           "--rm " +
           "-e 'SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true' " +
           "-v '/src:/usr/src' " +
@@ -276,18 +276,18 @@ describe("Docker", () => {
     it("runs docker network create with the name", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await dockerNetworkCreate("scanwise");
+      await dockerNetworkCreate("sq-network");
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe(
-        "docker network create 'scanwise'",
+        "docker network create 'sq-network'",
       );
     });
 
     it("rejects when docker network create fails", async () => {
       execMock.mockImplementation(execFailure("network exists"));
 
-      await expect(dockerNetworkCreate("scanwise")).rejects.toThrow(
+      await expect(dockerNetworkCreate("sq-network")).rejects.toThrow(
         "docker command failed",
       );
     });
@@ -299,10 +299,10 @@ describe("Docker", () => {
     it("runs docker network rm with the name", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await dockerNetworkRm("scanwise");
+      await dockerNetworkRm("sq-network");
 
       expect(execMock).toHaveBeenCalledOnce();
-      expect(execMock.mock.calls[0][0]).toBe("docker network rm 'scanwise'");
+      expect(execMock.mock.calls[0][0]).toBe("docker network rm 'sq-network'");
     });
 
     it("rejects when docker network rm fails", async () => {
