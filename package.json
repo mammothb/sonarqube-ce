@@ -1,7 +1,6 @@
 {
   "name": "sonarqube-ce-action",
   "description": "SonarQube CE Scan, Analysis, and Reports",
-  "version": "0.1.0",
   "author": "mmb L",
   "type": "module",
   "private": true,

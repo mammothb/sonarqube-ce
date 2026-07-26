@@ -49,5 +49,6 @@ bundled output is committed — CI checks it's up to date. Always run
 
 ## Updating the action version
 
-Bump `version` in `package.json` following SemVer. Then create a matching
-tag (e.g. `v1.0.0`) on the release commit.
+Create a semver git tag (e.g. `v1.0.0`) on the release commit. The git tag is
+the sole version source — `package.json#version` is intentionally omitted
+matching `docker/login-action` pattern.
