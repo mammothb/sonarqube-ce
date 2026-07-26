@@ -13,9 +13,9 @@ npm install
 | Command | Purpose |
 | ------- | ------- |
 | `npm run lint` | Lint with Biome |
-| `npm run fix` | Auto-fix lint issues |
+| `npm run fix` | Autofix linting issues |
 | `npm run format:check` | Check formatting |
-| `npm run format:write` | Auto-format |
+| `npm run format:write` | Autoformat |
 | `npm test` | Run tests (vitest) |
 | `npm run test:coverage` | Tests with coverage |
 | `npm run package` | Bundle TypeScript to `dist/` via Rollup |
@@ -49,5 +49,5 @@ bundled output is committed — CI checks it's up to date. Always run
 
 ## Updating the action version
 
-Bump `version` in `package.json` following semver. Then create a matching
+Bump `version` in `package.json` following SemVer. Then create a matching
 tag (e.g. `v1.0.0`) on the release commit.
