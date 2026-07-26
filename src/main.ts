@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { DefaultArtifactClient } from "@actions/artifact";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { restoreDockerCache, saveDockerCache } from "./cache.js";
@@ -154,6 +155,39 @@ export async function run(): Promise<void> {
         core.info(
           `Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`,
         );
+      }
+
+      // Upload artifacts
+      const artifact = new DefaultArtifactClient();
+      const started = Date.now();
+
+      if (inputs.reportsScopes.includes("overall")) {
+        const name = `sonar-overall-reports-${started}`;
+        core.info(`Uploading artifact "${name}" …`);
+        const result = await artifact.uploadArtifact(
+          name,
+          [
+            "reports/overall/issues-report.md",
+            "reports/overall/hotspots-report.md",
+          ],
+          ".",
+          { retentionDays: inputs.reportsRetentionDays },
+        );
+        core.setOutput("overall-reports-artifact-id", result.id);
+        core.info(`Uploaded: ${result.id}`);
+      }
+
+      if (inputs.reportsScopes.includes("new")) {
+        const name = `sonar-new-reports-${started}`;
+        core.info(`Uploading artifact "${name}" …`);
+        const result = await artifact.uploadArtifact(
+          name,
+          ["reports/new/issues-report.md", "reports/new/hotspots-report.md"],
+          ".",
+          { retentionDays: inputs.reportsRetentionDays },
+        );
+        core.setOutput("new-reports-artifact-id", result.id);
+        core.info(`Uploaded: ${result.id}`);
       }
 
       if (inputs.reportsScopes.includes("new")) {
