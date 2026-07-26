@@ -45,6 +45,8 @@ jobs:
       - name: Run Action
         id: test-action
         uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           reports-scopes: '["overall","new"]'
           reports-retention-days: '1'
