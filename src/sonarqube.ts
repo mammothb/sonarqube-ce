@@ -1,4 +1,9 @@
-import type { SonarMetrics, SonarQubeAuth } from "./types.js";
+import type {
+  SonarHotspot,
+  SonarIssue,
+  SonarMetrics,
+  SonarQubeAuth,
+} from "./types.js";
 
 /** Base64-encode credentials for Basic Auth header */
 function basicAuth(user: string, pass: string): string {
@@ -170,6 +175,104 @@ export class SonarQube {
       );
     }
     return (await resp.json()) as SonarMetrics;
+  }
+
+  // ── Issues ──────────────────────────────────────────────────────
+
+  /** GET /api/issues/search?componentKeys=…&p=…&ps=… */
+  async searchIssues(
+    componentKeys: string,
+    opts?: {
+      createdInLast?: string;
+      page?: number;
+      pageSize?: number;
+    },
+  ): Promise<{ issues: SonarIssue[]; paging: { total: number } }> {
+    const params = new URLSearchParams({
+      componentKeys,
+      ps: String(opts?.pageSize ?? 500),
+      p: String(opts?.page ?? 1),
+    });
+    if (opts?.createdInLast) {
+      params.set("createdInLast", opts.createdInLast);
+    }
+    const url = `${this.baseUrl}/api/issues/search?${params.toString()}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `issues/search failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+    return (await resp.json()) as {
+      issues: SonarIssue[];
+      paging: { total: number };
+    };
+  }
+
+  /** Fetch all issues across pages (pagesize=500) */
+  async fetchAllIssues(
+    componentKeys: string,
+    opts?: { createdInLast?: string },
+  ): Promise<SonarIssue[]> {
+    const all: SonarIssue[] = [];
+    const pageSize = 500;
+    let page = 1;
+    let total = 0;
+    do {
+      const result = await this.searchIssues(componentKeys, {
+        ...opts,
+        page,
+        pageSize,
+      });
+      all.push(...result.issues);
+      total = result.paging.total;
+      page++;
+    } while (all.length < total);
+    return all;
+  }
+
+  // ── Hotspots ────────────────────────────────────────────────────
+
+  /** GET /api/hotspots/search?projectKey=…&p=…&ps=… */
+  async searchHotspots(
+    projectKey: string,
+    opts?: { page?: number; pageSize?: number },
+  ): Promise<{ hotspots: SonarHotspot[]; paging: { total: number } }> {
+    const params = new URLSearchParams({
+      projectKey,
+      ps: String(opts?.pageSize ?? 500),
+      p: String(opts?.page ?? 1),
+    });
+    const url = `${this.baseUrl}/api/hotspots/search?${params.toString()}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `hotspots/search failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+    return (await resp.json()) as {
+      hotspots: SonarHotspot[];
+      paging: { total: number };
+    };
+  }
+
+  /** Fetch all hotspots across pages (pagesize=500) */
+  async fetchAllHotspots(projectKey: string): Promise<SonarHotspot[]> {
+    const all: SonarHotspot[] = [];
+    const pageSize = 500;
+    let page = 1;
+    let total = 0;
+    do {
+      const result = await this.searchHotspots(projectKey, { page, pageSize });
+      all.push(...result.hotspots);
+      total = result.paging.total;
+      page++;
+    } while (all.length < total);
+    return all;
   }
 
   // ── Wait helpers ───────────────────────────────────────────────────

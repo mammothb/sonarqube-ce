@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SonarQube } from "../src/sonarqube.js";
-import type { SonarMetrics } from "../src/types.js";
+import type { SonarHotspot, SonarIssue, SonarMetrics } from "../src/types.js";
 
 describe("SonarQube", () => {
   afterEach(() => {
@@ -553,6 +553,350 @@ describe("SonarQube", () => {
       await expect(sq.measures("missing", ["bugs"])).rejects.toThrow(
         "measures/component failed [404]: Component not found",
       );
+    });
+  });
+
+  // ── searchIssues ──────────────────────────────────────────────────
+
+  describe("searchIssues", () => {
+    it("fetches issues with componentKeys and default pagination", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          issues: [
+            {
+              key: "abc",
+              rule: "r1",
+              severity: "MAJOR",
+              component: "p:file.ts",
+              message: "fix",
+              type: "BUG",
+              creationDate: "2024-01-01",
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.searchIssues("my-project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url] = fetchMock.mock.calls[0];
+      expect(url).toContain("/api/issues/search?");
+      expect(url).toContain("componentKeys=my-project");
+      expect(url).toContain("ps=500");
+      expect(url).toContain("p=1");
+      expect(result.issues).toHaveLength(1);
+      expect(result.paging.total).toBe(1);
+    });
+
+    it("includes createdInLast when provided", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues: [], paging: { total: 0 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      await sq.searchIssues("proj", { createdInLast: "30d" });
+
+      expect(fetchMock.mock.calls[0][0]).toContain("createdInLast=30d");
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          text: async () => "Bad request",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.searchIssues("proj")).rejects.toThrow(
+        "issues/search failed [400]: Bad request",
+      );
+    });
+  });
+
+  // ── fetchAllIssues ────────────────────────────────────────────────
+
+  describe("fetchAllIssues", () => {
+    it("returns all issues from a single page", async () => {
+      const issues: SonarIssue[] = [
+        {
+          key: "a",
+          rule: "r1",
+          severity: "MAJOR",
+          component: "p:f.ts",
+          message: "m",
+          type: "BUG",
+          creationDate: "2024-01-01",
+        },
+        {
+          key: "b",
+          rule: "r2",
+          severity: "MINOR",
+          component: "p:g.ts",
+          message: "m",
+          type: "CODE_SMELL",
+          creationDate: "2024-01-02",
+        },
+      ];
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues, paging: { total: 2 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllIssues("proj");
+
+      expect(result).toHaveLength(2);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it("paginates across multiple pages", async () => {
+      // Page 1: 500 items, total 750 → page 2: 250 items
+      const page1 = Array.from({ length: 500 }, (_, i) => ({
+        key: `issue-${i}`,
+        rule: "r",
+        severity: "MINOR" as const,
+        component: "p:f.ts",
+        message: "m",
+        type: "CODE_SMELL" as const,
+        creationDate: "2024-01-01",
+      }));
+      const page2 = Array.from({ length: 250 }, (_, i) => ({
+        key: `issue-${500 + i}`,
+        rule: "r",
+        severity: "MINOR" as const,
+        component: "p:f.ts",
+        message: "m",
+        type: "CODE_SMELL" as const,
+        creationDate: "2024-01-01",
+      }));
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ issues: page1, paging: { total: 750 } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ issues: page2, paging: { total: 750 } }),
+        });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllIssues("proj");
+
+      expect(result).toHaveLength(750);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles empty result", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues: [], paging: { total: 0 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllIssues("proj");
+
+      expect(result).toHaveLength(0);
+    });
+
+    it("passes createdInLast to searchIssues", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues: [], paging: { total: 0 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      await sq.fetchAllIssues("proj", { createdInLast: "30d" });
+
+      expect(fetchMock.mock.calls[0][0]).toContain("createdInLast=30d");
+    });
+  });
+
+  // ── searchHotspots ────────────────────────────────────────────────
+
+  describe("searchHotspots", () => {
+    it("fetches hotspots with projectKey and default pagination", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          hotspots: [
+            {
+              key: "h1",
+              component: "p:f.ts",
+              message: "risk",
+              securityCategory: "xss",
+              vulnerabilityProbability: "HIGH",
+              ruleKey: "r1",
+              creationDate: "2024-01-01",
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.searchHotspots("my-project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url] = fetchMock.mock.calls[0];
+      expect(url).toContain("/api/hotspots/search?");
+      expect(url).toContain("projectKey=my-project");
+      expect(url).toContain("ps=500");
+      expect(url).toContain("p=1");
+      expect(result.hotspots).toHaveLength(1);
+      expect(result.paging.total).toBe(1);
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 404,
+          text: async () => "Not found",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.searchHotspots("missing")).rejects.toThrow(
+        "hotspots/search failed [404]: Not found",
+      );
+    });
+  });
+
+  // ── fetchAllHotspots ──────────────────────────────────────────────
+
+  describe("fetchAllHotspots", () => {
+    it("returns all hotspots from a single page", async () => {
+      const hotspots: SonarHotspot[] = [
+        {
+          key: "h1",
+          component: "p:f.ts",
+          message: "risk",
+          securityCategory: "xss",
+          vulnerabilityProbability: "HIGH",
+          ruleKey: "r1",
+          creationDate: "2024-01-01",
+        },
+        {
+          key: "h2",
+          component: "p:g.ts",
+          message: "risk",
+          securityCategory: "injection",
+          vulnerabilityProbability: "MEDIUM",
+          ruleKey: "r2",
+          creationDate: "2024-01-02",
+        },
+      ];
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ hotspots, paging: { total: 2 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllHotspots("proj");
+
+      expect(result).toHaveLength(2);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it("paginates across multiple pages", async () => {
+      const mk = (i: number): SonarHotspot => ({
+        key: `h-${i}`,
+        component: "p:f.ts",
+        message: "risk",
+        securityCategory: "xss",
+        vulnerabilityProbability: "LOW",
+        ruleKey: "r",
+        creationDate: "2024-01-01",
+      });
+      const page1 = Array.from({ length: 500 }, (_, i) => mk(i));
+      const page2 = Array.from({ length: 250 }, (_, i) => mk(500 + i));
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ hotspots: page1, paging: { total: 750 } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ hotspots: page2, paging: { total: 750 } }),
+        });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllHotspots("proj");
+
+      expect(result).toHaveLength(750);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles empty result", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ hotspots: [], paging: { total: 0 } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.fetchAllHotspots("proj");
+
+      expect(result).toHaveLength(0);
     });
   });
 });

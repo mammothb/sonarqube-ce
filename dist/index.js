@@ -28515,6 +28515,75 @@ class SonarQube {
         }
         return (await resp.json());
     }
+    // ── Issues ──────────────────────────────────────────────────────
+    /** GET /api/issues/search?componentKeys=…&p=…&ps=… */
+    async searchIssues(componentKeys, opts) {
+        const params = new URLSearchParams({
+            componentKeys,
+            ps: String(opts?.pageSize ?? 500),
+            p: String(opts?.page ?? 1),
+        });
+        if (opts?.createdInLast) {
+            params.set("createdInLast", opts.createdInLast);
+        }
+        const url = `${this.baseUrl}/api/issues/search?${params.toString()}`;
+        const resp = await fetch(url, {
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`issues/search failed [${resp.status}]: ${await resp.text()}`);
+        }
+        return (await resp.json());
+    }
+    /** Fetch all issues across pages (pagesize=500) */
+    async fetchAllIssues(componentKeys, opts) {
+        const all = [];
+        const pageSize = 500;
+        let page = 1;
+        let total = 0;
+        do {
+            const result = await this.searchIssues(componentKeys, {
+                ...opts,
+                page,
+                pageSize,
+            });
+            all.push(...result.issues);
+            total = result.paging.total;
+            page++;
+        } while (all.length < total);
+        return all;
+    }
+    // ── Hotspots ────────────────────────────────────────────────────
+    /** GET /api/hotspots/search?projectKey=…&p=…&ps=… */
+    async searchHotspots(projectKey, opts) {
+        const params = new URLSearchParams({
+            projectKey,
+            ps: String(opts?.pageSize ?? 500),
+            p: String(opts?.page ?? 1),
+        });
+        const url = `${this.baseUrl}/api/hotspots/search?${params.toString()}`;
+        const resp = await fetch(url, {
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`hotspots/search failed [${resp.status}]: ${await resp.text()}`);
+        }
+        return (await resp.json());
+    }
+    /** Fetch all hotspots across pages (pagesize=500) */
+    async fetchAllHotspots(projectKey) {
+        const all = [];
+        const pageSize = 500;
+        let page = 1;
+        let total = 0;
+        do {
+            const result = await this.searchHotspots(projectKey, { page, pageSize });
+            all.push(...result.hotspots);
+            total = result.paging.total;
+            page++;
+        } while (all.length < total);
+        return all;
+    }
     // ── Wait helpers ───────────────────────────────────────────────────
     /** Poll /api/system/status until UP, or throw after timeoutSec seconds */
     async waitForUp(timeoutSec) {
