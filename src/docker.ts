@@ -70,3 +70,51 @@ export async function dockerStop(name: string): Promise<void> {
 export async function dockerRm(name: string): Promise<void> {
   await execAsync(`docker rm ${escapeArg(name)}`);
 }
+
+/** Create a Docker bridge network */
+export async function dockerNetworkCreate(name: string): Promise<void> {
+  await execAsync(`docker network create ${escapeArg(name)}`);
+}
+
+/** Start a stopped container */
+export async function dockerStart(name: string): Promise<void> {
+  await execAsync(`docker start ${escapeArg(name)}`);
+}
+
+/** Execute a command in a running container. Returns stdout. */
+export async function dockerExec(
+  container: string,
+  cmd: string[],
+): Promise<string> {
+  const escaped = cmd.map(escapeArg).join(" ");
+  return await execAsync(`docker exec ${escapeArg(container)} ${escaped}`);
+}
+
+/** Save a Docker image to a tar file */
+export async function dockerSave(
+  image: string,
+  outputPath: string,
+): Promise<void> {
+  await execAsync(
+    `docker save -o ${escapeArg(outputPath)} ${escapeArg(image)}`,
+  );
+}
+
+/** Load a Docker image from a tar file */
+export async function dockerLoad(inputPath: string): Promise<void> {
+  await execAsync(`docker load -i ${escapeArg(inputPath)}`);
+}
+
+/** Check whether a container or image exists (returns true/false, never throws) */
+export async function dockerInspect(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    exec(`docker inspect ${escapeArg(name)}`, (error) => {
+      resolve(!error);
+    });
+  });
+}
+
+/** Fetch logs from a container */
+export async function dockerLogs(name: string): Promise<string> {
+  return await execAsync(`docker logs ${escapeArg(name)}`);
+}

@@ -10,9 +10,19 @@ vi.mock("node:child_process", () => ({
 }));
 
 // Dynamic import after mocks are registered
-const { dockerPull, dockerRun, dockerStop, dockerRm } = await import(
-  "../src/docker.js"
-);
+const {
+  dockerExec,
+  dockerInspect,
+  dockerLoad,
+  dockerLogs,
+  dockerNetworkCreate,
+  dockerPull,
+  dockerRm,
+  dockerRun,
+  dockerSave,
+  dockerStart,
+  dockerStop,
+} = await import("../src/docker.js");
 
 /** Helper: return a successful exec callback */
 function execSuccess(stdout = "abc123\n") {
@@ -256,6 +266,180 @@ describe("Docker", () => {
       });
 
       expect(execMock.mock.calls[0][0]).toContain("'CMD=$(malicious)'");
+    });
+  });
+
+  // ── networkCreate ─────────────────────────────────────────────────
+
+  describe("networkCreate", () => {
+    it("runs docker network create with the name", async () => {
+      execMock.mockImplementation(execSuccess());
+
+      await dockerNetworkCreate("scanwise");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe(
+        "docker network create 'scanwise'",
+      );
+    });
+
+    it("rejects when docker network create fails", async () => {
+      execMock.mockImplementation(execFailure("network exists"));
+
+      await expect(dockerNetworkCreate("scanwise")).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── start ─────────────────────────────────────────────────────────
+
+  describe("start", () => {
+    it("runs docker start with the container name", async () => {
+      execMock.mockImplementation(execSuccess());
+
+      await dockerStart("sonar-server");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe("docker start 'sonar-server'");
+    });
+
+    it("rejects when docker start fails", async () => {
+      execMock.mockImplementation(execFailure("no such container"));
+
+      await expect(dockerStart("nonexistent")).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── exec ──────────────────────────────────────────────────────────
+
+  describe("exec", () => {
+    it("runs docker exec with escaped command", async () => {
+      execMock.mockImplementation(execSuccess("output line\n"));
+
+      const result = await dockerExec("sonar-server", [
+        "grep",
+        "SUCCESS",
+        "/opt/sonarqube/logs/ce.log",
+      ]);
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe(
+        "docker exec 'sonar-server' 'grep' 'SUCCESS' '/opt/sonarqube/logs/ce.log'",
+      );
+      expect(result).toBe("output line");
+    });
+
+    it("rejects when docker exec fails", async () => {
+      execMock.mockImplementation(execFailure("not running"));
+
+      await expect(dockerExec("stopped", ["echo", "hi"])).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── save ──────────────────────────────────────────────────────────
+
+  describe("save", () => {
+    it("runs docker save -o with image and path", async () => {
+      execMock.mockImplementation(execSuccess());
+
+      await dockerSave("sonarqube:community", "/tmp/cache/sonarqube.tar");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe(
+        "docker save -o '/tmp/cache/sonarqube.tar' 'sonarqube:community'",
+      );
+    });
+
+    it("rejects when docker save fails", async () => {
+      execMock.mockImplementation(execFailure("permission denied"));
+
+      await expect(dockerSave("img", "/bad/path")).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── load ──────────────────────────────────────────────────────────
+
+  describe("load", () => {
+    it("runs docker load -i with input path", async () => {
+      execMock.mockImplementation(execSuccess());
+
+      await dockerLoad("/tmp/cache/sonarqube.tar");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe(
+        "docker load -i '/tmp/cache/sonarqube.tar'",
+      );
+    });
+
+    it("rejects when docker load fails", async () => {
+      execMock.mockImplementation(execFailure("file not found"));
+
+      await expect(dockerLoad("/missing.tar")).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── inspect ───────────────────────────────────────────────────────
+
+  describe("inspect", () => {
+    it("returns true when container exists", async () => {
+      execMock.mockImplementation(
+        (_cmd: string, cb: (err: null, stdout: string) => void) =>
+          cb(null, "{}"),
+      );
+
+      const result = await dockerInspect("sonar-server");
+
+      expect(result).toBe(true);
+      expect(execMock.mock.calls[0][0]).toBe("docker inspect 'sonar-server'");
+    });
+
+    it("returns false when container does not exist", async () => {
+      execMock.mockImplementation((_cmd: string, cb: (err: Error) => void) =>
+        cb(new Error("not found")),
+      );
+
+      const result = await dockerInspect("nonexistent");
+
+      expect(result).toBe(false);
+    });
+
+    it("never throws", async () => {
+      execMock.mockImplementation((_cmd: string, cb: (err: Error) => void) =>
+        cb(new Error("crash")),
+      );
+
+      await expect(dockerInspect("anything")).resolves.toBe(false);
+    });
+  });
+
+  // ── logs ──────────────────────────────────────────────────────────
+
+  describe("logs", () => {
+    it("runs docker logs and returns stdout", async () => {
+      execMock.mockImplementation(execSuccess("line1\nline2\n"));
+
+      const result = await dockerLogs("sonar-server");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe("docker logs 'sonar-server'");
+      expect(result).toBe("line1\nline2");
+    });
+
+    it("rejects when docker logs fails", async () => {
+      execMock.mockImplementation(execFailure("no such container"));
+
+      await expect(dockerLogs("nonexistent")).rejects.toThrow(
+        "docker command failed",
+      );
     });
   });
 });
