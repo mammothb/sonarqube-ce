@@ -8,7 +8,8 @@ import type {
 
 /** Base64-encode credentials for Basic Auth header */
 function basicAuth(user: string, pass: string): string {
-  return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
+  const encoded = Buffer.from(user + ":" + pass).toString("base64");
+  return `Basic ${encoded}`;
 }
 
 /** Retry fetch on 5xx responses (up to 3 attempts) */
@@ -30,7 +31,7 @@ async function fetchWithRetry(
 }
 
 export class SonarQube {
-  private baseUrl: string;
+  private readonly baseUrl: string;
   private auth: SonarQubeAuth;
 
   constructor(baseUrl: string, auth: SonarQubeAuth) {

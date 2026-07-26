@@ -49,65 +49,42 @@ function ratingStars(m: Record<string, string>, key: string): string {
   return generateStars(Number(val));
 }
 
-/**
- * Build the full analysis summary markdown string.
- * Includes quality gate banner, new-code stats, overall metrics,
- * collapsible issues/hotspots, and artifact download links.
- */
-export function generateAnalysisSummary(params: AnalysisSummaryParams): string {
-  const {
-    metrics,
-    newIssues,
-    newHotspots,
-    newArtifactUrl,
-    overallArtifactUrl,
-  } = params;
-  const m = metricMap(metrics);
-  const lines: string[] = [];
-
-  // ── Quality gate banner ───────────────────────────────────────────
-  const qgStatus = m.alert_status ?? "NONE";
-  if (qgStatus === "OK") {
-    lines.push(
+/** Build the quality gate banner section */
+function qgBanner(alertStatus: string): string[] {
+  if (alertStatus === "OK") {
+    return [
       "## ✅ Quality Gate Passed",
       "",
       "All quality gate conditions are met.",
       "",
-    );
-  } else if (qgStatus === "ERROR") {
-    lines.push(
+    ];
+  }
+  if (alertStatus === "ERROR") {
+    return [
       "## ❌ Quality Gate Failed",
       "",
       "One or more quality gate conditions failed.",
       "",
-    );
-  } else {
-    lines.push(
-      "## ⏳ Quality Gate — No Data",
-      "",
-      "No quality gate has been computed for this project yet.",
-      "",
-    );
+    ];
   }
+  return [
+    "## ⏳ Quality Gate — No Data",
+    "",
+    "No quality gate has been computed for this project yet.",
+    "",
+  ];
+}
 
-  // ── New-code stats ───────────────────────────────────────────────
-  if (newIssues.length > 0 || newHotspots.length > 0) {
-    lines.push("### New Code", "");
-    lines.push("| Metric | Value |", "|--------|-------|");
-    if (newIssues.length > 0) {
-      lines.push(`| New Issues | ${newIssues.length} |`);
-    }
-    if (newHotspots.length > 0) {
-      lines.push(`| New Hotspots | ${newHotspots.length} |`);
-    }
-    lines.push("");
-  }
+/** Build the overall metrics table rows */
+function metricsTableRows(m: Record<string, string>): string[] {
+  const rows: string[] = [
+    "### Overall Metrics",
+    "",
+    "| Metric | Value | Rating |",
+    "|--------|-------|--------|",
+  ];
 
-  // ── Overall metrics ──────────────────────────────────────────────
-  lines.push("### Overall Metrics", "");
-  lines.push("| Metric | Value | Rating |", "|--------|-------|--------|");
-
-  const metricsTable: Array<{ label: string; value: string; stars: string }> = [
+  const entries: Array<{ label: string; value: string; stars: string }> = [
     {
       label: "Bugs",
       value: fmt(m.bugs ?? "0"),
@@ -138,65 +115,129 @@ export function generateAnalysisSummary(params: AnalysisSummaryParams): string {
     { label: "Lines of Code", value: fmt(m.ncloc ?? "0"), stars: "-" },
   ];
 
-  for (const row of metricsTable) {
+  for (const row of entries) {
     if (row.value !== "-" || row.stars !== "-") {
-      lines.push(`| ${row.label} | ${row.value} | ${row.stars} |`);
+      rows.push(`| ${row.label} | ${row.value} | ${row.stars} |`);
     }
   }
-  lines.push("");
+  rows.push("");
+  return rows;
+}
 
-  // ── Artifact links ───────────────────────────────────────────────
-  if (newArtifactUrl || overallArtifactUrl) {
-    lines.push("### Downloads", "");
-    if (newArtifactUrl) {
-      lines.push(`- [New Code Report](${newArtifactUrl})`);
+/** Build artifact download links section */
+function artifactLinks(newUrl?: string, overallUrl?: string): string[] {
+  if (!newUrl && !overallUrl) {
+    return [];
+  }
+  const lines = ["### Downloads", ""];
+  if (newUrl) {
+    lines.push(`- [New Code Report](${newUrl})`);
+  }
+  if (overallUrl) {
+    lines.push(`- [Overall Report](${overallUrl})`);
+  }
+  lines.push("");
+  return lines;
+}
+
+/** Build collapsible HTML section for a list of items */
+function collapsibleSection(
+  summary: string,
+  headers: string[],
+  rows: string[][],
+): string[] {
+  const lines: string[] = [
+    "<details>",
+    `<summary><b>${summary}</b></summary>`,
+    "",
+    `| ${headers.join(" | ")} |`,
+    `|${headers.map(() => "------").join("|")}|`,
+  ];
+  for (const row of rows) {
+    lines.push(`| ${row.join(" | ")} |`);
+  }
+  lines.push("", "</details>", "");
+  return lines;
+}
+
+/**
+ * Build the full analysis summary markdown string.
+ * Includes quality gate banner, new-code stats, overall metrics,
+ * collapsible issues/hotspots, and artifact download links.
+ */
+export function generateAnalysisSummary(params: AnalysisSummaryParams): string {
+  const {
+    metrics,
+    newIssues,
+    newHotspots,
+    newArtifactUrl,
+    overallArtifactUrl,
+  } = params;
+  const m = metricMap(metrics);
+  const lines: string[] = [];
+
+  lines.push(...qgBanner(m.alert_status ?? "NONE"));
+
+  // ── New-code stats ───────────────────────────────────────────────
+  if (newIssues.length > 0 || newHotspots.length > 0) {
+    lines.push("### New Code", "");
+    lines.push("| Metric | Value |", "|--------|-------|");
+    if (newIssues.length > 0) {
+      lines.push(`| New Issues | ${newIssues.length} |`);
     }
-    if (overallArtifactUrl) {
-      lines.push(`- [Overall Report](${overallArtifactUrl})`);
+    if (newHotspots.length > 0) {
+      lines.push(`| New Hotspots | ${newHotspots.length} |`);
     }
     lines.push("");
   }
+
+  lines.push(...metricsTableRows(m));
+  lines.push(...artifactLinks(newArtifactUrl, overallArtifactUrl));
 
   // ── Collapsible new issues ───────────────────────────────────────
   if (newIssues.length > 0) {
-    lines.push("<details>");
-    lines.push(`<summary><b>New Issues (${newIssues.length})</b></summary>`);
-    lines.push("");
-    lines.push("| Severity | Type | File | Line | Message |");
-    lines.push("|----------|------|------|------|---------|");
-    for (const issue of newIssues) {
+    const rows = newIssues.map((issue) => {
       const file = issue.component.includes(":")
         ? issue.component.slice(issue.component.indexOf(":") + 1)
         : issue.component;
-      lines.push(
-        `| ${issue.severity} | ${issue.type} | ${file} | ${issue.line ?? "-"} | ${escapeMd(issue.message)} |`,
-      );
-    }
-    lines.push("");
-    lines.push("</details>");
-    lines.push("");
+      return [
+        issue.severity,
+        issue.type,
+        file,
+        String(issue.line ?? "-"),
+        escapeMd(issue.message),
+      ];
+    });
+    lines.push(
+      ...collapsibleSection(
+        `New Issues (${newIssues.length})`,
+        ["Severity", "Type", "File", "Line", "Message"],
+        rows,
+      ),
+    );
   }
 
   // ── Collapsible new hotspots ─────────────────────────────────────
   if (newHotspots.length > 0) {
-    lines.push("<details>");
-    lines.push(
-      `<summary><b>New Security Hotspots (${newHotspots.length})</b></summary>`,
-    );
-    lines.push("");
-    lines.push("| Probability | Category | File | Line | Message |");
-    lines.push("|-------------|----------|------|------|---------|");
-    for (const h of newHotspots) {
+    const rows = newHotspots.map((h) => {
       const file = h.component.includes(":")
         ? h.component.slice(h.component.indexOf(":") + 1)
         : h.component;
-      lines.push(
-        `| ${h.vulnerabilityProbability} | ${h.securityCategory} | ${file} | ${h.line ?? "-"} | ${escapeMd(h.message)} |`,
-      );
-    }
-    lines.push("");
-    lines.push("</details>");
-    lines.push("");
+      return [
+        h.vulnerabilityProbability,
+        h.securityCategory,
+        file,
+        String(h.line ?? "-"),
+        escapeMd(h.message),
+      ];
+    });
+    lines.push(
+      ...collapsibleSection(
+        `New Security Hotspots (${newHotspots.length})`,
+        ["Probability", "Category", "File", "Line", "Message"],
+        rows,
+      ),
+    );
   }
 
   return lines.join("\n");

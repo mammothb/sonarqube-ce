@@ -166,6 +166,39 @@ describe("SonarQube", () => {
   // ── waitForUp ─────────────────────────────────────────────────────
 
   describe("waitForUp", () => {
+    function upOnSecondCall() {
+      let calls = 0;
+      return vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: "DOWN" }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "UP" }),
+        });
+      });
+    }
+
+    function upAfterRejection() {
+      let calls = 0;
+      return vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(new Error("ECONNREFUSED"));
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "UP" }),
+        });
+      });
+    }
     it("resolves immediately when status is UP", async () => {
       vi.stubGlobal(
         "fetch",
@@ -183,23 +216,7 @@ describe("SonarQube", () => {
     });
 
     it("retries when status is not UP", async () => {
-      // First call: DOWN, second: UP
-      let wfuCalls = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        wfuCalls++;
-        if (wfuCalls === 1) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({ status: "DOWN" }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ status: "UP" }),
-        });
-      });
+      const fetchMock = upOnSecondCall();
       vi.stubGlobal("fetch", fetchMock);
 
       const sq = new SonarQube("http://localhost:9000", {
@@ -216,19 +233,7 @@ describe("SonarQube", () => {
     });
 
     it("retries when fetch throws (server not reachable)", async () => {
-      // First call: network error, second: UP
-      let wfuErrCalls = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        wfuErrCalls++;
-        if (wfuErrCalls === 1) {
-          return Promise.reject(new Error("ECONNREFUSED"));
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ status: "UP" }),
-        });
-      });
+      const fetchMock = upAfterRejection();
       vi.stubGlobal("fetch", fetchMock);
 
       const sq = new SonarQube("http://localhost:9000", {
@@ -467,6 +472,24 @@ describe("SonarQube", () => {
   // ── waitForQualityGate ───────────────────────────────────────────
 
   describe("waitForQualityGate", () => {
+    function qgNoneThenError() {
+      let calls = 0;
+      return vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ projectStatus: { status: "NONE" } }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ projectStatus: { status: "ERROR" } }),
+        });
+      });
+    }
     it("resolves immediately when status is not NONE", async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
@@ -484,22 +507,7 @@ describe("SonarQube", () => {
     });
 
     it("retries while status is NONE", async () => {
-      let qgCalls = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        qgCalls++;
-        if (qgCalls === 1) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({ projectStatus: { status: "NONE" } }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ projectStatus: { status: "ERROR" } }),
-        });
-      });
+      const fetchMock = qgNoneThenError();
       vi.stubGlobal("fetch", fetchMock);
       vi.stubGlobal("setTimeout", (fn: () => void) => fn());
 
@@ -674,6 +682,24 @@ describe("SonarQube", () => {
   // ── fetchAllIssues ────────────────────────────────────────────────
 
   describe("fetchAllIssues", () => {
+    function paginatedIssues(page1: SonarIssue[], page2: SonarIssue[]) {
+      let page = 0;
+      return vi.fn().mockImplementation(() => {
+        page++;
+        if (page === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ issues: page1, paging: { total: 750 } }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ issues: page2, paging: { total: 750 } }),
+        });
+      });
+    }
     it("returns all issues from a single page", async () => {
       const issues: SonarIssue[] = [
         {
@@ -732,22 +758,7 @@ describe("SonarQube", () => {
         creationDate: "2024-01-01",
       }));
 
-      let issuePage = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        issuePage++;
-        if (issuePage === 1) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({ issues: page1, paging: { total: 750 } }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ issues: page2, paging: { total: 750 } }),
-        });
-      });
+      const fetchMock = paginatedIssues(page1, page2);
       vi.stubGlobal("fetch", fetchMock);
 
       const sq = new SonarQube("http://localhost:9000", {
@@ -856,6 +867,24 @@ describe("SonarQube", () => {
   // ── fetchAllHotspots ──────────────────────────────────────────────
 
   describe("fetchAllHotspots", () => {
+    function paginatedHotspots(page1: SonarHotspot[], page2: SonarHotspot[]) {
+      let page = 0;
+      return vi.fn().mockImplementation(() => {
+        page++;
+        if (page === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ hotspots: page1, paging: { total: 750 } }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ hotspots: page2, paging: { total: 750 } }),
+        });
+      });
+    }
     it("returns all hotspots from a single page", async () => {
       const hotspots: SonarHotspot[] = [
         {
@@ -906,22 +935,7 @@ describe("SonarQube", () => {
       const page1 = Array.from({ length: 500 }, (_, i) => mk(i));
       const page2 = Array.from({ length: 250 }, (_, i) => mk(500 + i));
 
-      let hotspotPage = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        hotspotPage++;
-        if (hotspotPage === 1) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({ hotspots: page1, paging: { total: 750 } }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ hotspots: page2, paging: { total: 750 } }),
-        });
-      });
+      const fetchMock = paginatedHotspots(page1, page2);
       vi.stubGlobal("fetch", fetchMock);
 
       const sq = new SonarQube("http://localhost:9000", {
@@ -996,6 +1010,16 @@ describe("SonarQube", () => {
   // ── waitForReindex ───────────────────────────────────────────────
 
   describe("waitForReindex", () => {
+    function grepFailsThenSucceeds() {
+      let calls = 0;
+      return () => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(new Error("no match"));
+        }
+        return Promise.resolve("");
+      };
+    }
     it("resolves when grep finds SUCCESS immediately", async () => {
       dockerExecMock.mockResolvedValue(""); // grep -q found match
 
@@ -1016,14 +1040,7 @@ describe("SonarQube", () => {
     });
 
     it("retries when grep fails (no match)", async () => {
-      let callCount = 0;
-      dockerExecMock.mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.reject(new Error("no match"));
-        }
-        return Promise.resolve("");
-      });
+      dockerExecMock.mockImplementation(grepFailsThenSucceeds());
 
       vi.stubGlobal("setTimeout", (fn: () => void) => fn());
 
@@ -1058,11 +1075,11 @@ describe("SonarQube", () => {
   // ── retry on 5xx ────────────────────────────────────────────────
 
   describe("5xx retry", () => {
-    it("retries on 503 and succeeds on second attempt", async () => {
-      let callCount = 0;
-      const fetchMock = vi.fn().mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
+    function busyThenUp() {
+      let calls = 0;
+      return vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) {
           return Promise.resolve({
             ok: false,
             status: 503,
@@ -1075,6 +1092,9 @@ describe("SonarQube", () => {
           json: async () => ({ status: "UP" }),
         });
       });
+    }
+    it("retries on 503 and succeeds on second attempt", async () => {
+      const fetchMock = busyThenUp();
       vi.stubGlobal("fetch", fetchMock);
       vi.stubGlobal("setTimeout", (fn: () => void) => fn());
 

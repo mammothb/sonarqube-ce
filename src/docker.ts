@@ -13,7 +13,7 @@ function execAsync(command: string): Promise<string> {
       if (error) {
         reject(
           new Error(
-            `docker command failed [exit ${error.code}]: ${stderr || error.message}`,
+            `docker command failed [exit ${error.code}]: ${stderr ?? error.message}`,
           ),
         );
         return;

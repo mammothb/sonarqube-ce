@@ -17,7 +17,193 @@ import { parseInputs } from "./inputs.js";
 import { generateHotspotsReportMd, generateIssuesReportMd } from "./reports.js";
 import { SonarQube } from "./sonarqube.js";
 import { generateAnalysisSummary } from "./summary.js";
-import type { SonarHotspot, SonarIssue } from "./types.js";
+import type { ActionInputs, SonarHotspot, SonarIssue } from "./types.js";
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+async function execPreScanScript(script: string): Promise<void> {
+  core.info("Running pre-scan script …");
+  const isFile = existsSync(script);
+
+  let cmd: string;
+  if (isFile) {
+    cmd = `sh -e '${script}'`;
+  } else {
+    await writeFile("/tmp/pre-scan.sh", script, { mode: 0o755 });
+    cmd = "sh -e /tmp/pre-scan.sh";
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    exec(cmd, (error, stdout, stderr) => {
+      if (stdout) {
+        core.info(stdout.trim());
+      }
+      if (stderr) {
+        core.warning(stderr.trim());
+      }
+      if (error) {
+        reject(
+          new Error(
+            `Pre-scan script failed [exit ${error.code}]: ${stderr ?? error.message}`,
+          ),
+        );
+        return;
+      }
+      resolve();
+    });
+  });
+  core.info("Pre-scan script completed.");
+}
+
+interface ReportResults {
+  newIssues: SonarIssue[];
+  newHotspots: SonarHotspot[];
+  newArtifactUrl?: string;
+  overallArtifactUrl?: string;
+}
+
+async function generateReports(
+  sq: SonarQube,
+  inputs: ActionInputs,
+  projectKey: string,
+  containerName: string,
+): Promise<ReportResults> {
+  const result: ReportResults = { newIssues: [], newHotspots: [] };
+
+  if (inputs.reportsScopes.length === 0) {
+    return result;
+  }
+
+  core.info("Reindexing issues (may take a few minutes) …");
+  await sq.reindexIssues(projectKey);
+  await sq.waitForReindex(containerName, 300);
+  core.info("Reindex complete.");
+
+  if (inputs.reportsScopes.includes("overall")) {
+    core.debug("Generating overall reports …");
+    const overallIssues = await sq.fetchAllIssues(projectKey);
+    const overallHotspots = await sq.fetchAllHotspots(projectKey);
+
+    await mkdir("reports/overall", { recursive: true });
+    await writeFile(
+      "reports/overall/issues-report.md",
+      generateIssuesReportMd(overallIssues, inputs.sonarProjectName),
+    );
+    await writeFile(
+      "reports/overall/hotspots-report.md",
+      generateHotspotsReportMd(overallHotspots, inputs.sonarProjectName),
+    );
+    core.debug(
+      `Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`,
+    );
+  }
+
+  if (inputs.reportsScopes.includes("new")) {
+    core.debug("Generating new-code reports …");
+    result.newIssues = await sq.fetchAllIssues(projectKey, {
+      createdInLast: inputs.newCodeNDays,
+    });
+
+    const allHotspots = await sq.fetchAllHotspots(projectKey);
+    const days = parseInt(inputs.newCodeNDays, 10);
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    result.newHotspots = allHotspots.filter(
+      (h) => new Date(h.creationDate).getTime() >= cutoff,
+    );
+
+    await mkdir("reports/new", { recursive: true });
+    await writeFile(
+      "reports/new/issues-report.md",
+      generateIssuesReportMd(result.newIssues, inputs.sonarProjectName),
+    );
+    await writeFile(
+      "reports/new/hotspots-report.md",
+      generateHotspotsReportMd(result.newHotspots, inputs.sonarProjectName),
+    );
+    core.debug(
+      `New: ${result.newIssues.length} issues, ${result.newHotspots.length} hotspots`,
+    );
+  }
+
+  // Upload artifacts
+  const artifact = new DefaultArtifactClient();
+  const started = Date.now();
+  const { owner, repo } = github.context.repo;
+  const runId = github.context.runId;
+  const artifactBase = `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts`;
+
+  if (inputs.reportsScopes.includes("overall")) {
+    const name = `sonar-overall-reports-${started}`;
+    core.debug(`Uploading artifact "${name}" …`);
+    const uploadResult = await artifact.uploadArtifact(
+      name,
+      [
+        "reports/overall/issues-report.md",
+        "reports/overall/hotspots-report.md",
+      ],
+      ".",
+      { retentionDays: inputs.reportsRetentionDays },
+    );
+    result.overallArtifactUrl = `${artifactBase}/${uploadResult.id}`;
+    core.setOutput("overall-reports-artifact-id", uploadResult.id);
+    core.info(`Overall reports: ${result.overallArtifactUrl}`);
+  }
+
+  if (inputs.reportsScopes.includes("new")) {
+    const name = `sonar-new-reports-${started}`;
+    core.debug(`Uploading artifact "${name}" …`);
+    const uploadResult = await artifact.uploadArtifact(
+      name,
+      ["reports/new/issues-report.md", "reports/new/hotspots-report.md"],
+      ".",
+      { retentionDays: inputs.reportsRetentionDays },
+    );
+    result.newArtifactUrl = `${artifactBase}/${uploadResult.id}`;
+    core.setOutput("new-reports-artifact-id", uploadResult.id);
+    core.info(`New-code reports: ${result.newArtifactUrl}`);
+  }
+
+  return result;
+}
+
+async function postPrComment(summary: string): Promise<void> {
+  if (github.context.eventName !== "pull_request") {
+    return;
+  }
+
+  core.info("Posting PR comment …");
+  const token = process.env.GITHUB_TOKEN ?? "";
+  const octokit = github.getOctokit(token);
+  const header = "## SonarQube Analysis Summary";
+  const body = `${header}\n\n${summary}`;
+
+  const { data: comments } = await octokit.rest.issues.listComments({
+    ...github.context.repo,
+    issue_number: github.context.issue.number,
+  });
+
+  const botComment = comments.find(
+    (c) => c.user?.type === "Bot" && c.body?.includes(header),
+  );
+
+  if (botComment) {
+    await octokit.rest.issues.updateComment({
+      ...github.context.repo,
+      comment_id: botComment.id,
+      body,
+    });
+    core.info("PR comment updated.");
+  } else {
+    await octokit.rest.issues.createComment({
+      ...github.context.repo,
+      issue_number: github.context.issue.number,
+      body,
+    });
+    core.info("PR comment created.");
+  }
+}
+
+// ── Main orchestration ───────────────────────────────────────────────
 
 export async function run(): Promise<void> {
   const networkName = "sq-network";
@@ -27,41 +213,8 @@ export async function run(): Promise<void> {
   try {
     const inputs = parseInputs();
 
-    // ── Pre-scan script ───────────────────────────────────────────
     if (inputs.preScanScript) {
-      core.info("Running pre-scan script …");
-      const script = inputs.preScanScript;
-      const isFile = existsSync(script);
-
-      let cmd: string;
-      if (isFile) {
-        cmd = `sh -e '${script}'`;
-      } else {
-        // Inline script — write to temp file and execute
-        await writeFile("/tmp/pre-scan.sh", script, { mode: 0o755 });
-        cmd = "sh -e /tmp/pre-scan.sh";
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        exec(cmd, (error, stdout, stderr) => {
-          if (stdout) {
-            core.info(stdout.trim());
-          }
-          if (stderr) {
-            core.warning(stderr.trim());
-          }
-          if (error) {
-            reject(
-              new Error(
-                `Pre-scan script failed [exit ${error.code}]: ${stderr || error.message}`,
-              ),
-            );
-            return;
-          }
-          resolve();
-        });
-      });
-      core.info("Pre-scan script completed.");
+      await execPreScanScript(inputs.preScanScript);
     }
 
     // ── Docker setup ──────────────────────────────────────────────
@@ -76,7 +229,6 @@ export async function run(): Promise<void> {
     } else {
       core.info(`Pulling ${inputs.sonarServerImage} …`);
       await dockerPull(inputs.sonarServerImage);
-
       core.debug(`Pulling ${inputs.sonarScannerImage} …`);
       await dockerPull(inputs.sonarScannerImage);
     }
@@ -173,103 +325,9 @@ export async function run(): Promise<void> {
     await writeFile(metricsPath, JSON.stringify(metrics, null, 2));
     core.info(`Metrics written to ${metricsPath}`);
 
-    // ── Reports (if requested) ────────────────────────────────────
-    let newIssues: SonarIssue[] = [];
-    let newHotspots: SonarHotspot[] = [];
-    let newArtifactUrl: string | undefined;
-    let overallArtifactUrl: string | undefined;
-
-    if (inputs.reportsScopes.length > 0) {
-      core.info("Reindexing issues (may take a few minutes) …");
-      await sq.reindexIssues(projectKey);
-      await sq.waitForReindex(containerName, 300);
-      core.info("Reindex complete.");
-
-      if (inputs.reportsScopes.includes("overall")) {
-        core.debug("Generating overall reports …");
-        const overallIssues = await sq.fetchAllIssues(projectKey);
-        const overallHotspots = await sq.fetchAllHotspots(projectKey);
-
-        await mkdir("reports/overall", { recursive: true });
-        await writeFile(
-          "reports/overall/issues-report.md",
-          generateIssuesReportMd(overallIssues, inputs.sonarProjectName),
-        );
-        await writeFile(
-          "reports/overall/hotspots-report.md",
-          generateHotspotsReportMd(overallHotspots, inputs.sonarProjectName),
-        );
-        core.debug(
-          `Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`,
-        );
-      }
-
-      if (inputs.reportsScopes.includes("new")) {
-        core.debug("Generating new-code reports …");
-        newIssues = await sq.fetchAllIssues(projectKey, {
-          createdInLast: inputs.newCodeNDays,
-        });
-
-        const allHotspots = await sq.fetchAllHotspots(projectKey);
-        const days = parseInt(inputs.newCodeNDays, 10);
-        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-        newHotspots = allHotspots.filter(
-          (h) => new Date(h.creationDate).getTime() >= cutoff,
-        );
-
-        await mkdir("reports/new", { recursive: true });
-        await writeFile(
-          "reports/new/issues-report.md",
-          generateIssuesReportMd(newIssues, inputs.sonarProjectName),
-        );
-        await writeFile(
-          "reports/new/hotspots-report.md",
-          generateHotspotsReportMd(newHotspots, inputs.sonarProjectName),
-        );
-        core.debug(
-          `New: ${newIssues.length} issues, ${newHotspots.length} hotspots`,
-        );
-      }
-
-      // Upload artifacts
-      const artifact = new DefaultArtifactClient();
-      const started = Date.now();
-
-      const { owner, repo } = github.context.repo;
-      const runId = github.context.runId;
-      const artifactBase = `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts`;
-
-      if (inputs.reportsScopes.includes("overall")) {
-        const name = `sonar-overall-reports-${started}`;
-        core.debug(`Uploading artifact "${name}" …`);
-        const result = await artifact.uploadArtifact(
-          name,
-          [
-            "reports/overall/issues-report.md",
-            "reports/overall/hotspots-report.md",
-          ],
-          ".",
-          { retentionDays: inputs.reportsRetentionDays },
-        );
-        overallArtifactUrl = `${artifactBase}/${result.id}`;
-        core.setOutput("overall-reports-artifact-id", result.id);
-        core.info(`Overall reports: ${overallArtifactUrl}`);
-      }
-
-      if (inputs.reportsScopes.includes("new")) {
-        const name = `sonar-new-reports-${started}`;
-        core.debug(`Uploading artifact "${name}" …`);
-        const result = await artifact.uploadArtifact(
-          name,
-          ["reports/new/issues-report.md", "reports/new/hotspots-report.md"],
-          ".",
-          { retentionDays: inputs.reportsRetentionDays },
-        );
-        newArtifactUrl = `${artifactBase}/${result.id}`;
-        core.setOutput("new-reports-artifact-id", result.id);
-        core.info(`New-code reports: ${newArtifactUrl}`);
-      }
-    }
+    // ── Reports ───────────────────────────────────────────────────
+    const { newIssues, newHotspots, newArtifactUrl, overallArtifactUrl } =
+      await generateReports(sq, inputs, projectKey, containerName);
 
     // ── Step summary ──────────────────────────────────────────────
     const summary = generateAnalysisSummary({
@@ -285,40 +343,8 @@ export async function run(): Promise<void> {
     core.info("Step summary written.");
 
     // ── PR comment ───────────────────────────────────────────────
-    if (
-      github.context.eventName === "pull_request" &&
-      inputs.generatePrComment
-    ) {
-      core.info("Posting PR comment …");
-      const token = process.env.GITHUB_TOKEN ?? "";
-      const octokit = github.getOctokit(token);
-      const header = "## SonarQube Analysis Summary";
-      const body = `${header}\n\n${summary}`;
-
-      const { data: comments } = await octokit.rest.issues.listComments({
-        ...github.context.repo,
-        issue_number: github.context.issue.number,
-      });
-
-      const botComment = comments.find(
-        (c) => c.user?.type === "Bot" && c.body?.includes(header),
-      );
-
-      if (botComment) {
-        await octokit.rest.issues.updateComment({
-          ...github.context.repo,
-          comment_id: botComment.id,
-          body,
-        });
-        core.info("PR comment updated.");
-      } else {
-        await octokit.rest.issues.createComment({
-          ...github.context.repo,
-          issue_number: github.context.issue.number,
-          body,
-        });
-        core.info("PR comment created.");
-      }
+    if (inputs.generatePrComment) {
+      await postPrComment(summary);
     }
 
     // ── Cache save (only if cache miss) ────────────────────────────
