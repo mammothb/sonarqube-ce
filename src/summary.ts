@@ -1,5 +1,10 @@
 import type { SonarHotspot, SonarIssue, SonarMetrics } from "./types.js";
 
+/** Escape markdown table-breaking characters */
+function escapeMd(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/`/g, "\\`");
+}
+
 /**
  * Convert a SonarQube rating (1 = best, 5 = worst) to star display.
  * 1 → ★★★★★, 5 → ★☆☆☆☆
@@ -157,14 +162,14 @@ export function generateAnalysisSummary(params: AnalysisSummaryParams): string {
     lines.push("<details>");
     lines.push(`<summary><b>New Issues (${newIssues.length})</b></summary>`);
     lines.push("");
-    lines.push("| Severity | Type | File | Message |");
-    lines.push("|----------|------|------|---------|");
+    lines.push("| Severity | Type | File | Line | Message |");
+    lines.push("|----------|------|------|------|---------|");
     for (const issue of newIssues) {
       const file = issue.component.includes(":")
         ? issue.component.slice(issue.component.indexOf(":") + 1)
         : issue.component;
       lines.push(
-        `| ${issue.severity} | ${issue.type} | ${file} | ${issue.message} |`,
+        `| ${issue.severity} | ${issue.type} | ${file} | ${issue.line ?? "-"} | ${escapeMd(issue.message)} |`,
       );
     }
     lines.push("");
@@ -179,14 +184,14 @@ export function generateAnalysisSummary(params: AnalysisSummaryParams): string {
       `<summary><b>New Security Hotspots (${newHotspots.length})</b></summary>`,
     );
     lines.push("");
-    lines.push("| Probability | Category | File | Message |");
-    lines.push("|-------------|----------|------|---------|");
+    lines.push("| Probability | Category | File | Line | Message |");
+    lines.push("|-------------|----------|------|------|---------|");
     for (const h of newHotspots) {
       const file = h.component.includes(":")
         ? h.component.slice(h.component.indexOf(":") + 1)
         : h.component;
       lines.push(
-        `| ${h.vulnerabilityProbability} | ${h.securityCategory} | ${file} | ${h.message} |`,
+        `| ${h.vulnerabilityProbability} | ${h.securityCategory} | ${file} | ${h.line ?? "-"} | ${escapeMd(h.message)} |`,
       );
     }
     lines.push("");

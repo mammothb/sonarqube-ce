@@ -189,8 +189,8 @@ describe("generateAnalysisSummary", () => {
 
     expect(md).toContain("<details>");
     expect(md).toContain("<summary><b>New Issues (2)</b></summary>");
-    expect(md).toContain("| BLOCKER | CODE_SMELL | a.ts | Critical |");
-    expect(md).toContain("| MINOR | CODE_SMELL | b.ts | Minor |");
+    expect(md).toContain("| BLOCKER | CODE_SMELL | a.ts | - | Critical |");
+    expect(md).toContain("| MINOR | CODE_SMELL | b.ts | - | Minor |");
     expect(md).toContain("</details>");
   });
 
@@ -209,7 +209,7 @@ describe("generateAnalysisSummary", () => {
 
     expect(md).toContain("<details>");
     expect(md).toContain("<summary><b>New Security Hotspots (1)</b></summary>");
-    expect(md).toContain("| MEDIUM | xss | x.ts | Risk |");
+    expect(md).toContain("| MEDIUM | xss | x.ts | - | Risk |");
     expect(md).toContain("</details>");
   });
 
