@@ -196,6 +196,33 @@ export async function run(): Promise<void> {
         );
       }
 
+      if (inputs.reportsScopes.includes("new")) {
+        core.info("Generating new-code reports …");
+        newIssues = await sq.fetchAllIssues(inputs.sonarProjectName, {
+          createdInLast: inputs.newCodeNDays,
+        });
+
+        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+        const days = parseInt(inputs.newCodeNDays, 10);
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        newHotspots = allHotspots.filter(
+          (h) => new Date(h.creationDate).getTime() >= cutoff,
+        );
+
+        await mkdir("reports/new", { recursive: true });
+        await writeFile(
+          "reports/new/issues-report.md",
+          generateIssuesReportMd(newIssues, inputs.sonarProjectName),
+        );
+        await writeFile(
+          "reports/new/hotspots-report.md",
+          generateHotspotsReportMd(newHotspots, inputs.sonarProjectName),
+        );
+        core.info(
+          `New: ${newIssues.length} issues, ${newHotspots.length} hotspots`,
+        );
+      }
+
       // Upload artifacts
       const artifact = new DefaultArtifactClient();
       const started = Date.now();
@@ -227,33 +254,6 @@ export async function run(): Promise<void> {
         );
         core.setOutput("new-reports-artifact-id", result.id);
         core.info(`Uploaded: ${result.id}`);
-      }
-
-      if (inputs.reportsScopes.includes("new")) {
-        core.info("Generating new-code reports …");
-        newIssues = await sq.fetchAllIssues(inputs.sonarProjectName, {
-          createdInLast: inputs.newCodeNDays,
-        });
-
-        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
-        const days = parseInt(inputs.newCodeNDays, 10);
-        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-        newHotspots = allHotspots.filter(
-          (h) => new Date(h.creationDate).getTime() >= cutoff,
-        );
-
-        await mkdir("reports/new", { recursive: true });
-        await writeFile(
-          "reports/new/issues-report.md",
-          generateIssuesReportMd(newIssues, inputs.sonarProjectName),
-        );
-        await writeFile(
-          "reports/new/hotspots-report.md",
-          generateHotspotsReportMd(newHotspots, inputs.sonarProjectName),
-        );
-        core.info(
-          `New: ${newIssues.length} issues, ${newHotspots.length} hotspots`,
-        );
       }
     }
 
