@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import * as core from "@actions/core";
+import * as github from "@actions/github";
 import {
   dockerNetworkCreate,
   dockerNetworkRm,
@@ -182,6 +183,43 @@ export async function run(): Promise<void> {
     await core.summary.write();
     core.setOutput("analysis-summary", summary);
     core.info("Step summary written.");
+
+    // ── PR comment ───────────────────────────────────────────────
+    if (
+      github.context.eventName === "pull_request" &&
+      inputs.generatePrComment
+    ) {
+      core.info("Posting PR comment …");
+      const token = process.env.GITHUB_TOKEN ?? "";
+      const octokit = github.getOctokit(token);
+      const header = "## SonarQube Analysis Summary";
+      const body = `${header}\n\n${summary}`;
+
+      const { data: comments } = await octokit.rest.issues.listComments({
+        ...github.context.repo,
+        issue_number: github.context.issue.number,
+      });
+
+      const botComment = comments.find(
+        (c) => c.user?.type === "Bot" && c.body?.includes(header),
+      );
+
+      if (botComment) {
+        await octokit.rest.issues.updateComment({
+          ...github.context.repo,
+          comment_id: botComment.id,
+          body,
+        });
+        core.info("PR comment updated.");
+      } else {
+        await octokit.rest.issues.createComment({
+          ...github.context.repo,
+          issue_number: github.context.issue.number,
+          body,
+        });
+        core.info("PR comment created.");
+      }
+    }
   } catch (error) {
     if (error instanceof Error) {
       core.setFailed(error.message);
