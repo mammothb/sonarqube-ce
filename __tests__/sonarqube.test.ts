@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SonarQube } from "../src/sonarqube.js";
+import type { SonarMetrics } from "../src/types.js";
 
 describe("SonarQube", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   // ── constructor ───────────────────────────────────────────────────
@@ -379,6 +381,177 @@ describe("SonarQube", () => {
 
       await expect(sq.generateToken("dup")).rejects.toThrow(
         "user_tokens/generate failed [400]: Token name already exists",
+      );
+    });
+  });
+
+  // ── projectStatus ────────────────────────────────────────────────
+
+  describe("projectStatus", () => {
+    it("fetches quality gate status with encoded project key", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          projectStatus: { status: "OK" },
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.projectStatus("my/project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        "http://localhost:9000/api/qualitygates/project_status?projectKey=my%2Fproject",
+      );
+      expect(result).toEqual({ projectStatus: { status: "OK" } });
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 404,
+          text: async () => "Not found",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.projectStatus("missing")).rejects.toThrow(
+        "qualitygates/project_status failed [404]: Not found",
+      );
+    });
+  });
+
+  // ── waitForQualityGate ───────────────────────────────────────────
+
+  describe("waitForQualityGate", () => {
+    it("resolves immediately when status is not NONE", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ projectStatus: { status: "OK" } }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.waitForQualityGate("proj", 10)).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it("retries while status is NONE", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ projectStatus: { status: "NONE" } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ projectStatus: { status: "ERROR" } }),
+        });
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("setTimeout", (fn: () => void) => fn());
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await sq.waitForQualityGate("proj", 10);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws after timeout when status stays NONE", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ projectStatus: { status: "NONE" } }),
+        }),
+      );
+      vi.stubGlobal("setTimeout", (fn: () => void) => fn());
+
+      const nowStub = vi.fn().mockReturnValueOnce(0).mockReturnValue(20000);
+      vi.stubGlobal("Date", { ...Date, now: nowStub });
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.waitForQualityGate("proj", 10)).rejects.toThrow(
+        "Quality gate status still NONE after 10s",
+      );
+    });
+  });
+
+  // ── measures ──────────────────────────────────────────────────────
+
+  describe("measures", () => {
+    it("fetches metrics with comma-separated keys", async () => {
+      const metricsResponse: SonarMetrics = {
+        component: {
+          key: "my-project",
+          name: "My Project",
+          measures: [
+            { metric: "bugs", value: "5" },
+            { metric: "vulnerabilities", value: "0" },
+          ],
+        },
+      };
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => metricsResponse,
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      const result = await sq.measures("my-project", [
+        "bugs",
+        "vulnerabilities",
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url] = fetchMock.mock.calls[0];
+      expect(url).toContain("/api/measures/component?");
+      expect(url).toContain("component=my-project");
+      expect(url).toContain("metricKeys=bugs%2Cvulnerabilities");
+      expect(result).toEqual(metricsResponse);
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 404,
+          text: async () => "Component not found",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.measures("missing", ["bugs"])).rejects.toThrow(
+        "measures/component failed [404]: Component not found",
       );
     });
   });

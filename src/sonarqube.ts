@@ -1,4 +1,4 @@
-import type { SonarQubeAuth } from "./types.js";
+import type { SonarMetrics, SonarQubeAuth } from "./types.js";
 
 /** Base64-encode credentials for Basic Auth header */
 function basicAuth(user: string, pass: string): string {
@@ -113,6 +113,63 @@ export class SonarQube {
     }
     const data = (await resp.json()) as { token: string };
     return data.token;
+  }
+
+  // ── Quality Gates ───────────────────────────────────────────────
+
+  /** GET /api/qualitygates/project_status?projectKey=… */
+  async projectStatus(
+    projectKey: string,
+  ): Promise<{ projectStatus: { status: string } }> {
+    const url = `${this.baseUrl}/api/qualitygates/project_status?projectKey=${encodeURIComponent(projectKey)}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `qualitygates/project_status failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+    return (await resp.json()) as { projectStatus: { status: string } };
+  }
+
+  /** Poll projectStatus until status != "NONE", or throw after timeoutSec */
+  async waitForQualityGate(
+    projectKey: string,
+    timeoutSec: number,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutSec * 1000;
+    while (Date.now() < deadline) {
+      const { projectStatus } = await this.projectStatus(projectKey);
+      if (projectStatus.status !== "NONE") {
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`Quality gate status still NONE after ${timeoutSec}s`);
+  }
+
+  // ── Metrics ─────────────────────────────────────────────────────
+
+  /** GET /api/measures/component?component=…&metricKeys=… */
+  async measures(
+    component: string,
+    metricKeys: string[],
+  ): Promise<SonarMetrics> {
+    const params = new URLSearchParams({
+      component,
+      metricKeys: metricKeys.join(","),
+    });
+    const url = `${this.baseUrl}/api/measures/component?${params.toString()}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `measures/component failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+    return (await resp.json()) as SonarMetrics;
   }
 
   // ── Wait helpers ───────────────────────────────────────────────────

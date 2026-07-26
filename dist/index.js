@@ -28475,6 +28475,46 @@ class SonarQube {
         const data = (await resp.json());
         return data.token;
     }
+    // ── Quality Gates ───────────────────────────────────────────────
+    /** GET /api/qualitygates/project_status?projectKey=… */
+    async projectStatus(projectKey) {
+        const url = `${this.baseUrl}/api/qualitygates/project_status?projectKey=${encodeURIComponent(projectKey)}`;
+        const resp = await fetch(url, {
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`qualitygates/project_status failed [${resp.status}]: ${await resp.text()}`);
+        }
+        return (await resp.json());
+    }
+    /** Poll projectStatus until status != "NONE", or throw after timeoutSec */
+    async waitForQualityGate(projectKey, timeoutSec) {
+        const deadline = Date.now() + timeoutSec * 1000;
+        while (Date.now() < deadline) {
+            const { projectStatus } = await this.projectStatus(projectKey);
+            if (projectStatus.status !== "NONE") {
+                return;
+            }
+            await new Promise((r) => setTimeout(r, 2000));
+        }
+        throw new Error(`Quality gate status still NONE after ${timeoutSec}s`);
+    }
+    // ── Metrics ─────────────────────────────────────────────────────
+    /** GET /api/measures/component?component=…&metricKeys=… */
+    async measures(component, metricKeys) {
+        const params = new URLSearchParams({
+            component,
+            metricKeys: metricKeys.join(","),
+        });
+        const url = `${this.baseUrl}/api/measures/component?${params.toString()}`;
+        const resp = await fetch(url, {
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`measures/component failed [${resp.status}]: ${await resp.text()}`);
+        }
+        return (await resp.json());
+    }
     // ── Wait helpers ───────────────────────────────────────────────────
     /** Poll /api/system/status until UP, or throw after timeoutSec seconds */
     async waitForUp(timeoutSec) {
