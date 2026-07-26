@@ -1,17 +1,74 @@
-name: Code Analysis
-description: SonarQube CE Scan, Analysis, and Reports
+name: 'SonarQube CE Scan'
+description: >
+  Ephemeral SonarQube Community Edition scan with Docker. No external server
+  required. Analysis summary, reports, and PR comments.
 branding:
-  icon: heart
-  color: red
+  icon: 'target'
+  color: 'blue'
+
 inputs:
-  milliseconds:
-    description: Your input description here
-    required: true
-    default: '1000'
-# Define your outputs here.
+  sonar-project-name:
+    description: 'SonarQube project name'
+    required: false
+    default: ${{ github.event.repository.name }}
+  sonar-project-key:
+    description: 'SonarQube project key'
+    required: false
+    default: ${{ github.event.repository.name }}
+  sonar-source-path:
+    description: 'Source path from git root'
+    required: false
+    default: '.'
+  sonar-metrics-path:
+    description: 'Path where metrics JSON is written'
+    required: false
+    default: './sonar-metrics.json'
+  sonar-instance-port:
+    description: 'SonarQube instance port'
+    required: false
+    default: '9234'
+  sonar-server-image:
+    description: 'SonarQube Community Edition Docker image'
+    required: false
+    default: 'sonarqube:25.5.0.107428-community'
+  sonar-scanner-image:
+    description: 'Sonar Scanner CLI Docker image'
+    required: false
+    default: 'sonarsource/sonar-scanner-cli:11.3'
+  sonar-options:
+    description: >
+      Extra Sonar Scanner options (e.g. -Dsonar.rust.clippy.reportPaths=...)
+    required: false
+  pre-scan-script:
+    description: >
+      Path to script or inline script run before scan. Use for installing
+      toolchains (e.g. rustup, clippy) or generating external analyzer reports.
+    required: false
+  generate-pr-comment:
+    description: 'Post analysis summary as PR comment'
+    required: false
+    default: 'false'
+  new-code-n-days:
+    description: 'Days for new-code period'
+    required: false
+    default: '30d'
+  reports-scopes:
+    description: 'Report scopes: ["overall","new"], ["new"], or []'
+    required: false
+    default: '[]'
+  reports-retention-days:
+    description: 'Artifact retention in days'
+    required: false
+    default: '7'
+
 outputs:
-  time:
-    description: Your output description here
+  overall-reports-artifact-id:
+    description: 'Overall reports artifact ID'
+  new-reports-artifact-id:
+    description: 'New-code reports artifact ID'
+  analysis-summary:
+    description: 'Analysis summary markdown'
+
 runs:
   using: node24
   main: dist/index.js
