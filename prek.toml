@@ -2,15 +2,15 @@
 [[repos]]
 repo = "builtin"
 hooks = [
-  { id = "trailing-whitespace" },
-  { id = "end-of-file-fixer" },
+  { id = "trailing-whitespace", exclude = "^dist/" },
+  { id = "end-of-file-fixer", exclude = "^dist/" },
   { id = "check-toml" },
   { id = "check-yaml" },
   { id = "check-merge-conflict" },
   { id = "detect-private-key" },
   { id = "check-added-large-files", args = ["--maxkb=1024"] },
   { id = "check-case-conflict" },
-  { id = "mixed-line-ending", args = ["--fix=no"] },
+  { id = "mixed-line-ending", args = ["--fix=no"], exclude = "^dist/" },
 ]
 
 # Format + lint with Biome on commit
