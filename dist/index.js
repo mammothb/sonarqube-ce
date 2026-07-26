@@ -30,8 +30,9 @@ import require$$5$2 from 'node:async_hooks';
 import require$$1$4 from 'node:console';
 import require$$1$5 from 'node:dns';
 import require$$5$3 from 'string_decoder';
-import { exec } from 'child_process';
+import 'child_process';
 import 'timers';
+import { exec } from 'node:child_process';
 
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -28261,48 +28262,46 @@ function execAsync(command) {
         });
     });
 }
-class Docker {
-    /** Pull a Docker image */
-    static async pull(image) {
-        await execAsync(`docker pull ${escapeArg(image)}`);
+/** Pull a Docker image */
+async function dockerPull(image) {
+    await execAsync(`docker pull ${escapeArg(image)}`);
+}
+/**
+ * Run a Docker container (detached). Returns the container ID.
+ * Supports name, port, network, rm, env, and volume options.
+ */
+async function dockerRun(opts) {
+    const parts = ["docker", "run", "-d"];
+    if (opts.name) {
+        parts.push("--name", escapeArg(opts.name));
     }
-    /**
-     * Run a Docker container (detached). Returns the container ID.
-     * Supports name, port, network, rm, env, and volume options.
-     */
-    static async run(opts) {
-        const parts = ["docker", "run", "-d"];
-        if (opts.name) {
-            parts.push("--name", escapeArg(opts.name));
-        }
-        if (opts.port) {
-            parts.push("-p", escapeArg(opts.port));
-        }
-        if (opts.network) {
-            parts.push("--network", escapeArg(opts.network));
-        }
-        if (opts.rm) {
-            parts.push("--rm");
-        }
-        if (opts.env) {
-            for (const [key, value] of Object.entries(opts.env)) {
-                parts.push("-e", escapeArg(`${key}=${value}`));
-            }
-        }
-        if (opts.volume) {
-            parts.push("-v", escapeArg(opts.volume));
-        }
-        parts.push(escapeArg(opts.image));
-        return await execAsync(parts.join(" "));
+    if (opts.port) {
+        parts.push("-p", escapeArg(opts.port));
     }
-    /** Stop a running container */
-    static async stop(name) {
-        await execAsync(`docker stop ${escapeArg(name)}`);
+    if (opts.network) {
+        parts.push("--network", escapeArg(opts.network));
     }
-    /** Remove a stopped container */
-    static async rm(name) {
-        await execAsync(`docker rm ${escapeArg(name)}`);
+    if (opts.rm) {
+        parts.push("--rm");
     }
+    if (opts.env) {
+        for (const [key, value] of Object.entries(opts.env)) {
+            parts.push("-e", escapeArg(`${key}=${value}`));
+        }
+    }
+    if (opts.volume) {
+        parts.push("-v", escapeArg(opts.volume));
+    }
+    parts.push(escapeArg(opts.image));
+    return await execAsync(parts.join(" "));
+}
+/** Stop a running container */
+async function dockerStop(name) {
+    await execAsync(`docker stop ${escapeArg(name)}`);
+}
+/** Remove a stopped container */
+async function dockerRm(name) {
+    await execAsync(`docker rm ${escapeArg(name)}`);
 }
 
 /** Read + validate all action inputs. Returns typed ActionInputs or throws. */
@@ -28383,9 +28382,9 @@ async function run() {
     try {
         const inputs = parseInputs();
         info(`Pulling ${inputs.sonarServerImage} …`);
-        await Docker.pull(inputs.sonarServerImage);
+        await dockerPull(inputs.sonarServerImage);
         info(`Starting container on port ${inputs.sonarInstancePort} …`);
-        const containerId = await Docker.run({
+        const containerId = await dockerRun({
             image: inputs.sonarServerImage,
             name: "sonar-server",
             port: `${inputs.sonarInstancePort}:9000`,
@@ -28404,8 +28403,8 @@ async function run() {
     }
     finally {
         info("Stopping sonar-server …");
-        await Docker.stop("sonar-server").catch(() => { });
-        await Docker.rm("sonar-server").catch(() => { });
+        await dockerStop("sonar-server").catch(() => { });
+        await dockerRm("sonar-server").catch(() => { });
         info("Cleanup complete.");
     }
 }

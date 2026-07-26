@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const execMock = vi.fn();
 
-vi.mock("child_process", () => ({
+vi.mock("node:child_process", () => ({
   exec: (
     cmd: string,
     cb: (error: Error | null, stdout: string, stderr: string) => void,
@@ -10,7 +10,9 @@ vi.mock("child_process", () => ({
 }));
 
 // Dynamic import after mocks are registered
-const { Docker } = await import("../src/docker.js");
+const { dockerPull, dockerRun, dockerStop, dockerRm } = await import(
+  "../src/docker.js"
+);
 
 /** Helper: return a successful exec callback */
 function execSuccess(stdout = "abc123\n") {
@@ -45,7 +47,7 @@ describe("Docker", () => {
     it("runs docker pull with the image", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.pull("sonarqube:25.5.0.107428-community");
+      await dockerPull("sonarqube:25.5.0.107428-community");
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe(
@@ -56,7 +58,7 @@ describe("Docker", () => {
     it("rejects when docker pull fails", async () => {
       execMock.mockImplementation(execFailure("pull failed"));
 
-      await expect(Docker.pull("bad-image")).rejects.toThrow(
+      await expect(dockerPull("bad-image")).rejects.toThrow(
         "docker command failed",
       );
     });
@@ -68,7 +70,7 @@ describe("Docker", () => {
     it("runs docker run -d with image only", async () => {
       execMock.mockImplementation(execSuccess("container-id-123\n"));
 
-      const id = await Docker.run({ image: "alpine" });
+      const id = await dockerRun({ image: "alpine" });
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe("docker run -d 'alpine'");
@@ -78,7 +80,7 @@ describe("Docker", () => {
     it("includes --name when provided", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({ image: "alpine", name: "my-container" });
+      await dockerRun({ image: "alpine", name: "my-container" });
 
       expect(execMock.mock.calls[0][0]).toBe(
         "docker run -d --name 'my-container' 'alpine'",
@@ -88,7 +90,7 @@ describe("Docker", () => {
     it("includes -p when port is provided", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({ image: "alpine", port: "9234:9000" });
+      await dockerRun({ image: "alpine", port: "9234:9000" });
 
       expect(execMock.mock.calls[0][0]).toBe(
         "docker run -d -p '9234:9000' 'alpine'",
@@ -98,7 +100,7 @@ describe("Docker", () => {
     it("includes --network when provided", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({ image: "alpine", network: "scanwise" });
+      await dockerRun({ image: "alpine", network: "scanwise" });
 
       expect(execMock.mock.calls[0][0]).toBe(
         "docker run -d --network 'scanwise' 'alpine'",
@@ -108,7 +110,7 @@ describe("Docker", () => {
     it("includes --rm flag when true", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({ image: "alpine", rm: true });
+      await dockerRun({ image: "alpine", rm: true });
 
       expect(execMock.mock.calls[0][0]).toBe("docker run -d --rm 'alpine'");
     });
@@ -116,7 +118,7 @@ describe("Docker", () => {
     it("does not include --rm when false or omitted", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({ image: "alpine", rm: false });
+      await dockerRun({ image: "alpine", rm: false });
 
       expect(execMock.mock.calls[0][0]).toBe("docker run -d 'alpine'");
     });
@@ -124,7 +126,7 @@ describe("Docker", () => {
     it("includes -e for each env var", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({
+      await dockerRun({
         image: "alpine",
         env: { FOO: "bar", BAZ: "qux" },
       });
@@ -137,7 +139,7 @@ describe("Docker", () => {
     it("includes -v when volume is provided", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({
+      await dockerRun({
         image: "alpine",
         volume: "/host/path:/container/path",
       });
@@ -150,7 +152,7 @@ describe("Docker", () => {
     it("combines all options", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({
+      await dockerRun({
         image: "sonarqube:lts-community",
         name: "sonar-server",
         port: "9234:9000",
@@ -175,7 +177,7 @@ describe("Docker", () => {
     it("rejects when docker run fails", async () => {
       execMock.mockImplementation(execFailure("cannot bind port"));
 
-      await expect(Docker.run({ image: "alpine" })).rejects.toThrow(
+      await expect(dockerRun({ image: "alpine" })).rejects.toThrow(
         "docker command failed",
       );
     });
@@ -183,7 +185,7 @@ describe("Docker", () => {
     it("trims trailing newline from container ID", async () => {
       execMock.mockImplementation(execSuccess("abc123def\n\n"));
 
-      const id = await Docker.run({ image: "alpine" });
+      const id = await dockerRun({ image: "alpine" });
 
       expect(id).toBe("abc123def");
     });
@@ -195,7 +197,7 @@ describe("Docker", () => {
     it("runs docker stop with the container name", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.stop("sonar-server");
+      await dockerStop("sonar-server");
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe("docker stop 'sonar-server'");
@@ -204,7 +206,7 @@ describe("Docker", () => {
     it("rejects when docker stop fails", async () => {
       execMock.mockImplementation(execFailure("no such container"));
 
-      await expect(Docker.stop("nonexistent")).rejects.toThrow(
+      await expect(dockerStop("nonexistent")).rejects.toThrow(
         "docker command failed",
       );
     });
@@ -216,7 +218,7 @@ describe("Docker", () => {
     it("runs docker rm with the container name", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.rm("sonar-server");
+      await dockerRm("sonar-server");
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe("docker rm 'sonar-server'");
@@ -225,7 +227,7 @@ describe("Docker", () => {
     it("rejects when docker rm fails", async () => {
       execMock.mockImplementation(execFailure("conflict"));
 
-      await expect(Docker.rm("running-container")).rejects.toThrow(
+      await expect(dockerRm("running-container")).rejects.toThrow(
         "docker command failed",
       );
     });
@@ -237,7 +239,7 @@ describe("Docker", () => {
     it("escapes single quotes in image names", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.pull("img'with'quotes");
+      await dockerPull("img'with'quotes");
 
       // shell-escaping: 'img'\''with'\''quotes'
       expect(execMock.mock.calls[0][0]).toBe(
@@ -248,7 +250,7 @@ describe("Docker", () => {
     it("escapes shell metacharacters in env values", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await Docker.run({
+      await dockerRun({
         image: "alpine",
         env: { CMD: "$(malicious)" },
       });

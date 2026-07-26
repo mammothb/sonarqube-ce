@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { Docker } from "./docker.js";
+import { dockerPull, dockerRm, dockerRun, dockerStop } from "./docker.js";
 import { parseInputs } from "./inputs.js";
 
 /**
@@ -11,10 +11,10 @@ export async function run(): Promise<void> {
     const inputs = parseInputs();
 
     core.info(`Pulling ${inputs.sonarServerImage} …`);
-    await Docker.pull(inputs.sonarServerImage);
+    await dockerPull(inputs.sonarServerImage);
 
     core.info(`Starting container on port ${inputs.sonarInstancePort} …`);
-    const containerId = await Docker.run({
+    const containerId = await dockerRun({
       image: inputs.sonarServerImage,
       name: "sonar-server",
       port: `${inputs.sonarInstancePort}:9000`,
@@ -34,8 +34,8 @@ export async function run(): Promise<void> {
     }
   } finally {
     core.info("Stopping sonar-server …");
-    await Docker.stop("sonar-server").catch(() => {});
-    await Docker.rm("sonar-server").catch(() => {});
+    await dockerStop("sonar-server").catch(() => {});
+    await dockerRm("sonar-server").catch(() => {});
     core.info("Cleanup complete.");
   }
 }
