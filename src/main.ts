@@ -65,27 +65,27 @@ export async function run(): Promise<void> {
     }
 
     // ── Docker setup ──────────────────────────────────────────────
-    core.info("Checking Docker image cache …");
+    core.debug("Checking Docker image cache …");
     const cacheHit = await restoreDockerCache(
       inputs.sonarServerImage,
       inputs.sonarScannerImage,
     );
 
     if (cacheHit) {
-      core.info("Cache hit — skipping pull.");
+      core.info("Docker image cache hit — skipping pull.");
     } else {
       core.info(`Pulling ${inputs.sonarServerImage} …`);
       await dockerPull(inputs.sonarServerImage);
 
-      core.info(`Pulling ${inputs.sonarScannerImage} …`);
+      core.debug(`Pulling ${inputs.sonarScannerImage} …`);
       await dockerPull(inputs.sonarScannerImage);
     }
 
-    core.info(`Creating network ${networkName} …`);
+    core.debug(`Creating network ${networkName} …`);
     await dockerNetworkCreate(networkName);
 
     const sqPort = "9234";
-    core.info(`Starting SonarQube on port ${sqPort} …`);
+    core.debug(`Starting SonarQube on port ${sqPort} …`);
     await dockerRun({
       image: inputs.sonarServerImage,
       name: containerName,
@@ -101,7 +101,7 @@ export async function run(): Promise<void> {
     await sq.waitForUp(180);
     core.info("SonarQube is UP.");
 
-    core.info("Changing default password …");
+    core.debug("Changing default password …");
     const newPassword = "Son@rless123";
     await sq.changePassword(newPassword);
     sq.setAuth({ user: "admin", pass: newPassword });
@@ -111,15 +111,15 @@ export async function run(): Promise<void> {
       /[^a-zA-Z0-9._:-]+/g,
       "-",
     );
-    core.info(
+    core.debug(
       `Creating project "${inputs.sonarProjectName}" (key: ${projectKey}) …`,
     );
     await sq.createProject(inputs.sonarProjectName, projectKey);
     await sq.setHomepage(projectKey);
 
-    core.info("Generating user token …");
+    core.debug("Generating user token …");
     const token = await sq.generateToken(tokenName);
-    core.info(`Token: ${token.slice(0, 8)}…`);
+    core.debug(`Token: ${token.slice(0, 8)}…`);
 
     // ── Scanner ───────────────────────────────────────────────────
     const workspace = process.env.GITHUB_WORKSPACE ?? ".";
@@ -167,7 +167,7 @@ export async function run(): Promise<void> {
       "open_issues",
       "alert_status",
     ];
-    core.info("Fetching metrics …");
+    core.debug("Fetching metrics …");
     const metrics = await sq.measures(projectKey, metricKeys);
     const metricsPath = "./sonar-metrics.json";
     await writeFile(metricsPath, JSON.stringify(metrics, null, 2));
@@ -180,13 +180,13 @@ export async function run(): Promise<void> {
     let overallArtifactUrl: string | undefined;
 
     if (inputs.reportsScopes.length > 0) {
-      core.info("Reindexing issues …");
+      core.info("Reindexing issues (may take a few minutes) …");
       await sq.reindexIssues(projectKey);
       await sq.waitForReindex(containerName, 300);
       core.info("Reindex complete.");
 
       if (inputs.reportsScopes.includes("overall")) {
-        core.info("Generating overall reports …");
+        core.debug("Generating overall reports …");
         const overallIssues = await sq.fetchAllIssues(projectKey);
         const overallHotspots = await sq.fetchAllHotspots(projectKey);
 
@@ -199,13 +199,13 @@ export async function run(): Promise<void> {
           "reports/overall/hotspots-report.md",
           generateHotspotsReportMd(overallHotspots, inputs.sonarProjectName),
         );
-        core.info(
+        core.debug(
           `Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`,
         );
       }
 
       if (inputs.reportsScopes.includes("new")) {
-        core.info("Generating new-code reports …");
+        core.debug("Generating new-code reports …");
         newIssues = await sq.fetchAllIssues(projectKey, {
           createdInLast: inputs.newCodeNDays,
         });
@@ -226,7 +226,7 @@ export async function run(): Promise<void> {
           "reports/new/hotspots-report.md",
           generateHotspotsReportMd(newHotspots, inputs.sonarProjectName),
         );
-        core.info(
+        core.debug(
           `New: ${newIssues.length} issues, ${newHotspots.length} hotspots`,
         );
       }
@@ -241,7 +241,7 @@ export async function run(): Promise<void> {
 
       if (inputs.reportsScopes.includes("overall")) {
         const name = `sonar-overall-reports-${started}`;
-        core.info(`Uploading artifact "${name}" …`);
+        core.debug(`Uploading artifact "${name}" …`);
         const result = await artifact.uploadArtifact(
           name,
           [
@@ -253,12 +253,12 @@ export async function run(): Promise<void> {
         );
         overallArtifactUrl = `${artifactBase}/${result.id}`;
         core.setOutput("overall-reports-artifact-id", result.id);
-        core.info(`Uploaded: ${overallArtifactUrl}`);
+        core.info(`Overall reports: ${overallArtifactUrl}`);
       }
 
       if (inputs.reportsScopes.includes("new")) {
         const name = `sonar-new-reports-${started}`;
-        core.info(`Uploading artifact "${name}" …`);
+        core.debug(`Uploading artifact "${name}" …`);
         const result = await artifact.uploadArtifact(
           name,
           ["reports/new/issues-report.md", "reports/new/hotspots-report.md"],
@@ -267,7 +267,7 @@ export async function run(): Promise<void> {
         );
         newArtifactUrl = `${artifactBase}/${result.id}`;
         core.setOutput("new-reports-artifact-id", result.id);
-        core.info(`Uploaded: ${newArtifactUrl}`);
+        core.info(`New-code reports: ${newArtifactUrl}`);
       }
     }
 
@@ -323,12 +323,12 @@ export async function run(): Promise<void> {
 
     // ── Cache save (only if cache miss) ────────────────────────────
     if (!cacheHit) {
-      core.info("Saving Docker images to cache …");
+      core.debug("Saving Docker images to cache …");
       await saveDockerCache(
         inputs.sonarServerImage,
         inputs.sonarScannerImage,
       ).catch((err) => core.warning(`Cache save failed: ${err}`));
-      core.info("Cache saved.");
+      core.debug("Cache saved.");
     }
   } catch (error) {
     if (error instanceof Error) {
@@ -339,7 +339,7 @@ export async function run(): Promise<void> {
     core.info(`Stopping ${containerName} …`);
     await dockerStop(containerName).catch(() => {});
     await dockerRm(containerName).catch(() => {});
-    core.info(`Removing network ${networkName} …`);
+    core.debug(`Removing network ${networkName} …`);
     await dockerNetworkRm(networkName).catch(() => {});
     core.info("Cleanup complete.");
   }
