@@ -11,7 +11,7 @@ import { SonarQube } from "../src/sonarqube.js";
 
 describe("SonarQube", () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -972,9 +972,14 @@ describe("SonarQube", () => {
     });
 
     it("retries when grep fails (no match)", async () => {
-      dockerExecMock
-        .mockRejectedValueOnce(new Error("no match")) // first: not found
-        .mockResolvedValueOnce(""); // second: found
+      let callCount = 0;
+      dockerExecMock.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new Error("no match"));
+        }
+        return Promise.resolve("");
+      });
 
       vi.stubGlobal("setTimeout", (fn: () => void) => fn());
 
