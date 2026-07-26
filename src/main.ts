@@ -226,6 +226,12 @@ export async function run(): Promise<void> {
       // Upload artifacts
       const artifact = new DefaultArtifactClient();
       const started = Date.now();
+      let newArtifactUrl: string | undefined;
+      let overallArtifactUrl: string | undefined;
+
+      const { owner, repo } = github.context.repo;
+      const runId = github.context.runId;
+      const artifactBase = `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts`;
 
       if (inputs.reportsScopes.includes("overall")) {
         const name = `sonar-overall-reports-${started}`;
@@ -239,8 +245,9 @@ export async function run(): Promise<void> {
           ".",
           { retentionDays: inputs.reportsRetentionDays },
         );
+        overallArtifactUrl = `${artifactBase}/${result.id}`;
         core.setOutput("overall-reports-artifact-id", result.id);
-        core.info(`Uploaded: ${result.id}`);
+        core.info(`Uploaded: ${overallArtifactUrl}`);
       }
 
       if (inputs.reportsScopes.includes("new")) {
@@ -252,8 +259,9 @@ export async function run(): Promise<void> {
           ".",
           { retentionDays: inputs.reportsRetentionDays },
         );
+        newArtifactUrl = `${artifactBase}/${result.id}`;
         core.setOutput("new-reports-artifact-id", result.id);
-        core.info(`Uploaded: ${result.id}`);
+        core.info(`Uploaded: ${newArtifactUrl}`);
       }
     }
 
@@ -262,6 +270,8 @@ export async function run(): Promise<void> {
       metrics,
       newIssues,
       newHotspots,
+      newArtifactUrl,
+      overallArtifactUrl,
     });
     core.summary.addRaw(summary);
     await core.summary.write();
