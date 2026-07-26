@@ -23,6 +23,7 @@ hooks = [
     language = "system",
     entry = "npm run fix",
     files = "\\.(ts|tsx|js|jsx|json|jsonc)$",
+    exclude = "^dist/",
     pass_filenames = false
   },
 ]
