@@ -1,3 +1,5 @@
+import { exec } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { DefaultArtifactClient } from "@actions/artifact";
 import * as core from "@actions/core";
@@ -24,6 +26,43 @@ export async function run(): Promise<void> {
 
   try {
     const inputs = parseInputs();
+
+    // ── Pre-scan script ───────────────────────────────────────────
+    if (inputs.preScanScript) {
+      core.info("Running pre-scan script …");
+      const script = inputs.preScanScript;
+      const isFile = existsSync(script);
+
+      let cmd: string;
+      if (isFile) {
+        cmd = `sh -e '${script}'`;
+      } else {
+        // Inline script — write to temp file and execute
+        await writeFile("/tmp/pre-scan.sh", script, { mode: 0o755 });
+        cmd = "sh -e /tmp/pre-scan.sh";
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        exec(cmd, (error, stdout, stderr) => {
+          if (stdout) {
+            core.info(stdout.trim());
+          }
+          if (stderr) {
+            core.warning(stderr.trim());
+          }
+          if (error) {
+            reject(
+              new Error(
+                `Pre-scan script failed [exit ${error.code}]: ${stderr || error.message}`,
+              ),
+            );
+            return;
+          }
+          resolve();
+        });
+      });
+      core.info("Pre-scan script completed.");
+    }
 
     // ── Docker setup ──────────────────────────────────────────────
     core.info("Checking Docker image cache …");
