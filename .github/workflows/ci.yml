@@ -35,17 +35,12 @@ jobs:
         id: npm-test
         run: npm test
   test-action:
-    name: GitHub Actions Test
+    name: GitHub Action Test
     runs-on: ubuntu-latest
     steps:
       - *checkout
-      - name: Test Local Action
+      - name: GitHub Action Test
         id: test-action
         uses: ./
         with:
-          milliseconds: 2000
-      - name: Print Output
-        id: output
-        run: echo "${TIME}"
-        env:
-          TIME: ${{ steps.test-action.outputs.time }}
+          sonar-server-image: "sonarqube:25.5.0.107428-community"

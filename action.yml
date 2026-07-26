@@ -1,11 +1,10 @@
 name: 'SonarQube CE Scan'
 description: >
-  Ephemeral SonarQube Community Edition scan with Docker. No external server
-  required. Analysis summary, reports, and PR comments.
+  Ephemeral SonarQube Community Edition scan with Docker. No external server required. Analysis summary, reports, and PR comments.
+
 branding:
   icon: 'target'
   color: 'blue'
-
 inputs:
   sonar-project-name:
     description: 'SonarQube project name'
@@ -38,11 +37,12 @@ inputs:
   sonar-options:
     description: >
       Extra Sonar Scanner options (e.g. -Dsonar.rust.clippy.reportPaths=...)
+
     required: false
   pre-scan-script:
     description: >
-      Path to script or inline script run before scan. Use for installing
-      toolchains (e.g. rustup, clippy) or generating external analyzer reports.
+      Path to script or inline script run before scan. Use for installing toolchains (e.g. rustup, clippy) or generating external analyzer reports.
+
     required: false
   generate-pr-comment:
     description: 'Post analysis summary as PR comment'
@@ -60,7 +60,6 @@ inputs:
     description: 'Artifact retention in days'
     required: false
     default: '7'
-
 outputs:
   overall-reports-artifact-id:
     description: 'Overall reports artifact ID'
@@ -68,7 +67,6 @@ outputs:
     description: 'New-code reports artifact ID'
   analysis-summary:
     description: 'Analysis summary markdown'
-
 runs:
   using: node24
   main: dist/index.js
