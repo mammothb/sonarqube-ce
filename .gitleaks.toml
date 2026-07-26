@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Allowlist for test fixtures and examples"
+  paths = [
+    '''__tests__/''',
+    '''__fixtures__/''',
+  ]

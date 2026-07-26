@@ -47,10 +47,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LINTER_RULES_PATH: .
           VALIDATE_ALL_CODEBASE: true
-          VALIDATE_JAVASCRIPT_ES: false
-          VALIDATE_JSCPD: false
-          VALIDATE_JSON: false
-          VALIDATE_MARKDOWN_PRETTIER: false
-          VALIDATE_TYPESCRIPT_ES: false
-          VALIDATE_TYPESCRIPT_PRETTIER: false
-          VALIDATE_YAML_PRETTIER: false
+          VALIDATE_BASH: true
+          VALIDATE_BASH_EXEC: true
+          VALIDATE_BIOME_FORMAT: true
+          VALIDATE_BIOME_LINT: true
+          VALIDATE_CHECKOV: true
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_GITHUB_ACTIONS_ZIZMOR: true
+          VALIDATE_GITLEAKS: true
+          VALIDATE_MARKDOWN: true
+          VALIDATE_SHELL_SHFMT: true
+          VALIDATE_SPELL_CODESPELL: true
+          VALIDATE_YAML: true
