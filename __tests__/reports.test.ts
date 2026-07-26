@@ -11,7 +11,7 @@ import type { SonarHotspot, SonarIssue } from "../src/types.js";
 function issue(overrides: Partial<SonarIssue> = {}): SonarIssue {
   return {
     key: "abc123",
-    rule: "javascript:S1234",
+    rule: "javascript:S1234", // NOSONAR — SonarQube rule ID, not javascript: URL
     severity: "MAJOR",
     component: "my-project:src/file.ts",
     message: "Avoid using console.log",
@@ -164,7 +164,7 @@ function hotspot(overrides: Partial<SonarHotspot> = {}): SonarHotspot {
     message: "Make sure this is safe",
     securityCategory: "xss",
     vulnerabilityProbability: "HIGH",
-    ruleKey: "javascript:S5131",
+    ruleKey: "javascript:S5131", // NOSONAR — SonarQube rule ID, not javascript: URL
     creationDate: "2024-01-15T10:30:00+0000",
     line: 88,
     author: "dev@example.com",

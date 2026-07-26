@@ -116,7 +116,7 @@ describe("SonarQube", () => {
       );
       expect(init.body).toContain("login=admin");
       expect(init.body).toContain("previousPassword=admin");
-      expect(init.body).toContain("password=Son%40rless123"); // @ → %40
+      expect(init.body).toContain("password=Son%40rless123"); // @ → %40 // NOSONAR — test credential
     });
 
     it("throws on non-OK response", async () => {

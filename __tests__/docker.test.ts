@@ -369,7 +369,7 @@ describe("Docker", () => {
     it("runs docker save -o with image and path", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await dockerSave("sonarqube:community", "/tmp/cache/sonarqube.tar");
+      await dockerSave("sonarqube:community", "/tmp/cache/sonarqube.tar"); // NOSONAR — test path
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe(
@@ -392,7 +392,7 @@ describe("Docker", () => {
     it("runs docker load -i with input path", async () => {
       execMock.mockImplementation(execSuccess());
 
-      await dockerLoad("/tmp/cache/sonarqube.tar");
+      await dockerLoad("/tmp/cache/sonarqube.tar"); // NOSONAR — test path
 
       expect(execMock).toHaveBeenCalledOnce();
       expect(execMock.mock.calls[0][0]).toBe(

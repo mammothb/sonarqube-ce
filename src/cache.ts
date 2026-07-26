@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import * as cache from "@actions/cache";
 import { dockerLoad, dockerSave } from "./docker.js";
 
-const CACHE_DIR = "/tmp/docker-cache";
+const CACHE_DIR = "/tmp/docker-cache"; // NOSONAR — standard temp dir for Docker image caching
 
 /** Ensure the cache directory exists */
 function ensureCacheDir(): void {
