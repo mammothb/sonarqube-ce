@@ -28299,9 +28299,9 @@ function error(message, properties = {}) {
 async function wait(milliseconds) {
     return new Promise((resolve) => {
         if (Number.isNaN(milliseconds)) {
-            throw new Error('milliseconds is not a number');
+            throw new Error("milliseconds is not a number");
         }
-        setTimeout(() => resolve('done!'), milliseconds);
+        setTimeout(() => resolve("done!"), milliseconds);
     });
 }
 
@@ -28312,7 +28312,7 @@ async function wait(milliseconds) {
  */
 async function run() {
     try {
-        const ms = getInput('milliseconds');
+        const ms = getInput("milliseconds");
         // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
         debug(`Waiting ${ms} milliseconds ...`);
         // Log the current timestamp, wait, then log the new timestamp
@@ -28320,7 +28320,7 @@ async function run() {
         await wait(parseInt(ms, 10));
         debug(new Date().toTimeString());
         // Set outputs for other workflow steps to use
-        setOutput('time', new Date().toTimeString());
+        setOutput("time", new Date().toTimeString());
     }
     catch (error) {
         // Fail the workflow run if an error occurs
