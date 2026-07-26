@@ -28303,6 +28303,14 @@ async function dockerStop(name) {
 async function dockerRm(name) {
     await execAsync(`docker rm ${escapeArg(name)}`);
 }
+/** Create a Docker bridge network */
+async function dockerNetworkCreate(name) {
+    await execAsync(`docker network create ${escapeArg(name)}`);
+}
+/** Remove a Docker network */
+async function dockerNetworkRm(name) {
+    await execAsync(`docker network rm ${escapeArg(name)}`);
+}
 
 /** Read + validate all action inputs. Returns typed ActionInputs or throws. */
 function parseInputs() {
@@ -28374,27 +28382,105 @@ function parseInputs() {
     };
 }
 
+/** Base64-encode credentials for Basic Auth header */
+function basicAuth(user, pass) {
+    return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
+}
+class SonarQube {
+    baseUrl;
+    auth;
+    constructor(baseUrl, auth) {
+        this.baseUrl = baseUrl.replace(/\/$/, "");
+        this.auth = auth;
+    }
+    /** Update credentials (used after password change) */
+    setAuth(auth) {
+        this.auth = auth;
+    }
+    // ── System ────────────────────────────────────────────────────────
+    /** GET /api/system/status */
+    async systemStatus() {
+        const resp = await fetch(`${this.baseUrl}/api/system/status`, {
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`system/status failed [${resp.status}]: ${await resp.text()}`);
+        }
+        return (await resp.json());
+    }
+    /** POST /api/users/change_password */
+    async changePassword(newPassword) {
+        const resp = await fetch(`${this.baseUrl}/api/users/change_password`, {
+            method: "POST",
+            headers: {
+                Authorization: basicAuth(this.auth.user, this.auth.pass),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+                login: this.auth.user,
+                previousPassword: this.auth.pass,
+                password: newPassword,
+            }).toString(),
+        });
+        if (!resp.ok) {
+            throw new Error(`change_password failed [${resp.status}]: ${await resp.text()}`);
+        }
+    }
+    // ── Wait helpers ───────────────────────────────────────────────────
+    /** Poll /api/system/status until UP, or throw after timeoutSec seconds */
+    async waitForUp(timeoutSec) {
+        const deadline = Date.now() + timeoutSec * 1000;
+        while (Date.now() < deadline) {
+            try {
+                const { status } = await this.systemStatus();
+                if (status === "UP") {
+                    return;
+                }
+            }
+            catch {
+                // Server not reachable yet — retry
+            }
+            await new Promise((r) => setTimeout(r, 2000));
+        }
+        throw new Error(`SonarQube did not reach UP status within ${timeoutSec}s`);
+    }
+}
+
 /**
- * Smoke-test orchestrator — validates Docker pull/run/stop/rm in CI.
+ * Smoke-test orchestrator — validates Docker + SonarQube API in CI.
  * Replaced with full orchestrator in F13.
  */
 async function run() {
+    const networkName = "scanwise";
+    const containerName = "sonar-server";
     try {
         const inputs = parseInputs();
+        // ── Docker setup ──────────────────────────────────────────────
         info(`Pulling ${inputs.sonarServerImage} …`);
         await dockerPull(inputs.sonarServerImage);
+        info(`Creating network ${networkName} …`);
+        await dockerNetworkCreate(networkName);
         info(`Starting container on port ${inputs.sonarInstancePort} …`);
         const containerId = await dockerRun({
             image: inputs.sonarServerImage,
-            name: "sonar-server",
+            name: containerName,
             port: `${inputs.sonarInstancePort}:9000`,
+            network: networkName,
         });
         info(`Container ID: ${containerId}`);
-        // Give SonarQube a few seconds to start, then verify it responds
-        await new Promise((r) => setTimeout(r, 15_000));
-        const resp = await fetch(`http://localhost:${inputs.sonarInstancePort}/api/system/status`);
-        const status = (await resp.json());
-        info(`SonarQube status: ${status.status}`);
+        // ── SonarQube API ─────────────────────────────────────────────
+        const baseUrl = `http://localhost:${inputs.sonarInstancePort}`;
+        const sq = new SonarQube(baseUrl, { user: "admin", pass: "admin" });
+        info("Waiting for SonarQube to boot (timeout: 180s) …");
+        await sq.waitForUp(180);
+        info("SonarQube is UP.");
+        info("Changing default password …");
+        const newPassword = "Son@rless123";
+        await sq.changePassword(newPassword);
+        // Verify new credentials work
+        sq.setAuth({ user: "admin", pass: newPassword });
+        const status = await sq.systemStatus();
+        info(`Verified — system status: ${status.status}`);
     }
     catch (error) {
         if (error instanceof Error) {
@@ -28402,9 +28488,12 @@ async function run() {
         }
     }
     finally {
-        info("Stopping sonar-server …");
-        await dockerStop("sonar-server").catch(() => { });
-        await dockerRm("sonar-server").catch(() => { });
+        // ── Cleanup ───────────────────────────────────────────────────
+        info(`Stopping ${containerName} …`);
+        await dockerStop(containerName).catch(() => { });
+        await dockerRm(containerName).catch(() => { });
+        info(`Removing network ${networkName} …`);
+        await dockerNetworkRm(networkName).catch(() => { });
         info("Cleanup complete.");
     }
 }

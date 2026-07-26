@@ -16,6 +16,7 @@ const {
   dockerLoad,
   dockerLogs,
   dockerNetworkCreate,
+  dockerNetworkRm,
   dockerPull,
   dockerRm,
   dockerRun,
@@ -287,6 +288,27 @@ describe("Docker", () => {
       execMock.mockImplementation(execFailure("network exists"));
 
       await expect(dockerNetworkCreate("scanwise")).rejects.toThrow(
+        "docker command failed",
+      );
+    });
+  });
+
+  // ── networkRm ────────────────────────────────────────────────────
+
+  describe("networkRm", () => {
+    it("runs docker network rm with the name", async () => {
+      execMock.mockImplementation(execSuccess());
+
+      await dockerNetworkRm("scanwise");
+
+      expect(execMock).toHaveBeenCalledOnce();
+      expect(execMock.mock.calls[0][0]).toBe("docker network rm 'scanwise'");
+    });
+
+    it("rejects when docker network rm fails", async () => {
+      execMock.mockImplementation(execFailure("network not found"));
+
+      await expect(dockerNetworkRm("missing")).rejects.toThrow(
         "docker command failed",
       );
     });

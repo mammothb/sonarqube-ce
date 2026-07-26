@@ -76,6 +76,11 @@ export async function dockerNetworkCreate(name: string): Promise<void> {
   await execAsync(`docker network create ${escapeArg(name)}`);
 }
 
+/** Remove a Docker network */
+export async function dockerNetworkRm(name: string): Promise<void> {
+  await execAsync(`docker network rm ${escapeArg(name)}`);
+}
+
 /** Start a stopped container */
 export async function dockerStart(name: string): Promise<void> {
   await execAsync(`docker start ${escapeArg(name)}`);
