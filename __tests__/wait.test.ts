@@ -7,7 +7,7 @@ describe('wait.ts', () => {
   it('Throws an invalid number', async () => {
     const input = parseInt('foo', 10)
 
-    expect(isNaN(input)).toBe(true)
+    expect(Number.isNaN(input)).toBe(true)
 
     await expect(wait(input)).rejects.toThrow('milliseconds is not a number')
   })

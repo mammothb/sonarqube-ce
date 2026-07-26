@@ -1,0 +1,28 @@
+# General-purpose checks (zero-deps, instant)
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+  { id = "check-merge-conflict" },
+  { id = "detect-private-key" },
+  { id = "check-added-large-files", args = ["--maxkb=1024"] },
+  { id = "check-case-conflict" },
+  { id = "mixed-line-ending", args = ["--fix=no"] },
+]
+
+# Format + lint with Biome on commit
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "biome",
+    name = "biome",
+    language = "system",
+    entry = "npm run fix",
+    files = "\\.(ts|tsx|js|jsx|json|jsonc)$",
+    pass_filenames = false
+  },
+]
