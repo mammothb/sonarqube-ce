@@ -11,6 +11,24 @@ function basicAuth(user: string, pass: string): string {
   return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
 }
 
+/** Retry fetch on 5xx responses (up to 3 attempts) */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 3,
+): Promise<Response> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const resp = await fetch(url, init);
+    if (resp.ok || resp.status < 500 || attempt === retries) {
+      return resp;
+    }
+    // 5xx — wait then retry
+    await new Promise((r) => setTimeout(r, 1000 * attempt));
+  }
+  // Unreachable (last iteration returns unconditionally)
+  return await fetch(url, init);
+}
+
 export class SonarQube {
   private baseUrl: string;
   private auth: SonarQubeAuth;
@@ -29,7 +47,7 @@ export class SonarQube {
 
   /** GET /api/system/status */
   async systemStatus(): Promise<{ status: string }> {
-    const resp = await fetch(`${this.baseUrl}/api/system/status`, {
+    const resp = await fetchWithRetry(`${this.baseUrl}/api/system/status`, {
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
     if (!resp.ok) {
@@ -42,18 +60,21 @@ export class SonarQube {
 
   /** POST /api/users/change_password */
   async changePassword(newPassword: string): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/api/users/change_password`, {
-      method: "POST",
-      headers: {
-        Authorization: basicAuth(this.auth.user, this.auth.pass),
-        "Content-Type": "application/x-www-form-urlencoded",
+    const resp = await fetchWithRetry(
+      `${this.baseUrl}/api/users/change_password`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: basicAuth(this.auth.user, this.auth.pass),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          login: this.auth.user,
+          previousPassword: this.auth.pass,
+          password: newPassword,
+        }).toString(),
       },
-      body: new URLSearchParams({
-        login: this.auth.user,
-        previousPassword: this.auth.pass,
-        password: newPassword,
-      }).toString(),
-    });
+    );
     if (!resp.ok) {
       throw new Error(
         `change_password failed [${resp.status}]: ${await resp.text()}`,
@@ -65,7 +86,7 @@ export class SonarQube {
 
   /** POST /api/projects/create */
   async createProject(name: string): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/api/projects/create`, {
+    const resp = await fetchWithRetry(`${this.baseUrl}/api/projects/create`, {
       method: "POST",
       headers: {
         Authorization: basicAuth(this.auth.user, this.auth.pass),
@@ -82,17 +103,20 @@ export class SonarQube {
 
   /** POST /api/projects/update_visibility (public so homepage works) */
   async setHomepage(project: string): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/api/projects/update_visibility`, {
-      method: "POST",
-      headers: {
-        Authorization: basicAuth(this.auth.user, this.auth.pass),
-        "Content-Type": "application/x-www-form-urlencoded",
+    const resp = await fetchWithRetry(
+      `${this.baseUrl}/api/projects/update_visibility`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: basicAuth(this.auth.user, this.auth.pass),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          project,
+          visibility: "public",
+        }).toString(),
       },
-      body: new URLSearchParams({
-        project,
-        visibility: "public",
-      }).toString(),
-    });
+    );
     if (!resp.ok) {
       throw new Error(
         `projects/update_visibility failed [${resp.status}]: ${await resp.text()}`,
@@ -104,14 +128,17 @@ export class SonarQube {
 
   /** POST /api/user_tokens/generate — returns the token string */
   async generateToken(name: string): Promise<string> {
-    const resp = await fetch(`${this.baseUrl}/api/user_tokens/generate`, {
-      method: "POST",
-      headers: {
-        Authorization: basicAuth(this.auth.user, this.auth.pass),
-        "Content-Type": "application/x-www-form-urlencoded",
+    const resp = await fetchWithRetry(
+      `${this.baseUrl}/api/user_tokens/generate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: basicAuth(this.auth.user, this.auth.pass),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ name }).toString(),
       },
-      body: new URLSearchParams({ name }).toString(),
-    });
+    );
     if (!resp.ok) {
       throw new Error(
         `user_tokens/generate failed [${resp.status}]: ${await resp.text()}`,
@@ -128,7 +155,7 @@ export class SonarQube {
     projectKey: string,
   ): Promise<{ projectStatus: { status: string } }> {
     const url = `${this.baseUrl}/api/qualitygates/project_status?projectKey=${encodeURIComponent(projectKey)}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithRetry(url, {
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
     if (!resp.ok) {
@@ -167,7 +194,7 @@ export class SonarQube {
       metricKeys: metricKeys.join(","),
     });
     const url = `${this.baseUrl}/api/measures/component?${params.toString()}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithRetry(url, {
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
     if (!resp.ok) {
@@ -198,7 +225,7 @@ export class SonarQube {
       params.set("createdInLast", opts.createdInLast);
     }
     const url = `${this.baseUrl}/api/issues/search?${params.toString()}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithRetry(url, {
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
     if (!resp.ok) {
@@ -247,7 +274,7 @@ export class SonarQube {
       p: String(opts?.page ?? 1),
     });
     const url = `${this.baseUrl}/api/hotspots/search?${params.toString()}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithRetry(url, {
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
     if (!resp.ok) {
@@ -281,7 +308,7 @@ export class SonarQube {
   /** POST /api/issues/reindex?project=… (triggers async reindex) */
   async reindexIssues(project: string): Promise<void> {
     const url = `${this.baseUrl}/api/issues/reindex?project=${encodeURIComponent(project)}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithRetry(url, {
       method: "POST",
       headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
     });
