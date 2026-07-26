@@ -33,12 +33,8 @@
   ],
   "javascript": {
     "formatter": {
-      "quoteStyle": "single",
-      "semicolons": "asNeeded",
-      "trailingCommas": "none",
-      "bracketSpacing": true,
-      "bracketSameLine": true,
-      "arrowParentheses": "always"
+      "quoteStyle": "double",
+      "semicolons": "always"
     }
   },
   "json": {

@@ -17,13 +17,11 @@ it is generated from.
 | `__tests__/`         | Unit Tests                                               |
 | `.devcontainer/`     | Development Container Configuration                      |
 | `.github/`           | GitHub Configuration                                     |
-| `.licenses/`         | License Information                                      |
 | `.vscode/`           | Visual Studio Code Configuration                         |
 | `badges/`            | Badges for readme                                        |
 | `dist/`              | Generated JavaScript Code                                |
 | `src/`               | TypeScript Source Code                                   |
 | `.env.example`       | Environment Variables Example for `@github/local-action` |
-| `.licensed.yml`      | Licensed Configuration                                   |
 | `.markdown-lint.yml` | Markdown Linter Configuration                            |
 | `.node-version`      | Node.js Version Configuration                            |
 | `.prettierrc.yml`    | Prettier Formatter Configuration                         |
