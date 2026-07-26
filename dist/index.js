@@ -1,4 +1,4 @@
-import { writeFile as writeFile$1 } from 'node:fs/promises';
+import { writeFile as writeFile$1, mkdir as mkdir$1 } from 'node:fs/promises';
 import * as os from 'os';
 import os__default, { EOL } from 'os';
 import * as crypto from 'crypto';
@@ -28695,6 +28695,106 @@ function parseInputs() {
     };
 }
 
+/** Escape markdown table-breaking characters in a string */
+function escapeMd(value) {
+    return value
+        .replace(/\|/g, "\\|")
+        .replace(/\*/g, "\\*")
+        .replace(/_/g, "\\_")
+        .replace(/`/g, "\\`")
+        .replace(/\[/g, "\\[")
+        .replace(/\]/g, "\\]")
+        .replace(/</g, "\\<")
+        .replace(/>/g, "\\>");
+}
+/** One-line severity badge */
+function severityBadge(severity) {
+    switch (severity) {
+        case "BLOCKER":
+            return "🔴 BLOCKER";
+        case "CRITICAL":
+            return "🟠 CRITICAL";
+        case "MAJOR":
+            return "🟡 MAJOR";
+        case "MINOR":
+            return "🟢 MINOR";
+        case "INFO":
+            return "ℹ️ INFO";
+        default:
+            return severity;
+    }
+}
+/** Type label */
+function typeLabel(type) {
+    switch (type) {
+        case "BUG":
+            return "🐛 BUG";
+        case "VULNERABILITY":
+            return "🛡️ VULNERABILITY";
+        case "CODE_SMELL":
+            return "👃 CODE_SMELL";
+        default:
+            return type;
+    }
+}
+/** Extract file path from component key ("projectKey:path/to/file.ts") */
+function filePath(component) {
+    const idx = component.indexOf(":");
+    return idx !== -1 ? component.slice(idx + 1) : component;
+}
+/**
+ * Full issues report as a markdown table.
+ * Returns "No issues found." when the array is empty.
+ */
+function generateIssuesReportMd(issues, projectName) {
+    if (issues.length === 0) {
+        return `# Issues Report — ${escapeMd(projectName)}\n\nNo issues found.`;
+    }
+    const lines = [
+        `# Issues Report — ${escapeMd(projectName)}`,
+        "",
+        "| Severity | Type | Rule | Message | Component | Line | Author | Effort |",
+        "|----------|------|------|---------|-----------|------|--------|--------|",
+    ];
+    for (const issue of issues) {
+        lines.push(`| ${severityBadge(issue.severity)} | ${typeLabel(issue.type)} | ${escapeMd(issue.rule)} | ${escapeMd(issue.message)} | ${escapeMd(filePath(issue.component))} | ${issue.line ?? "-"} | ${escapeMd(issue.author ?? "-")} | ${escapeMd(issue.effort ?? "-")} |`);
+    }
+    return `${lines.join("\n")}\n`;
+}
+// ── Hotspots ────────────────────────────────────────────────────────
+/** One-line probability badge */
+function probabilityBadge(probability) {
+    switch (probability) {
+        case "HIGH":
+            return "🔴 HIGH";
+        case "MEDIUM":
+            return "🟡 MEDIUM";
+        case "LOW":
+            return "🟢 LOW";
+        default:
+            return probability;
+    }
+}
+/**
+ * Full hotspots report as a markdown table.
+ * Returns "No hotspots found." when the array is empty.
+ */
+function generateHotspotsReportMd(hotspots, projectName) {
+    if (hotspots.length === 0) {
+        return `# Security Hotspots Report — ${escapeMd(projectName)}\n\nNo hotspots found.`;
+    }
+    const lines = [
+        `# Security Hotspots Report — ${escapeMd(projectName)}`,
+        "",
+        "| Probability | Category | Rule | Message | Component | Line | Author |",
+        "|-------------|----------|------|---------|-----------|------|--------|",
+    ];
+    for (const h of hotspots) {
+        lines.push(`| ${probabilityBadge(h.vulnerabilityProbability)} | ${escapeMd(h.securityCategory)} | ${escapeMd(h.ruleKey)} | ${escapeMd(h.message)} | ${escapeMd(filePath(h.component))} | ${h.line ?? "-"} | ${escapeMd(h.author ?? "-")} |`);
+    }
+    return `${lines.join("\n")}\n`;
+}
+
 /** Base64-encode credentials for Basic Auth header */
 function basicAuth(user, pass) {
     return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
@@ -29188,11 +29288,43 @@ async function run() {
         const metrics = await sq.measures(inputs.sonarProjectName, metricKeys);
         await writeFile$1(inputs.sonarMetricsPath, JSON.stringify(metrics, null, 2));
         info(`Metrics written to ${inputs.sonarMetricsPath}`);
+        // ── Reports (if requested) ────────────────────────────────────
+        let newIssues = [];
+        let newHotspots = [];
+        if (inputs.reportsScopes.length > 0) {
+            info("Reindexing issues …");
+            await sq.reindexIssues(inputs.sonarProjectName);
+            await sq.waitForReindex(containerName, 300);
+            info("Reindex complete.");
+            if (inputs.reportsScopes.includes("overall")) {
+                info("Generating overall reports …");
+                const overallIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
+                const overallHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+                await mkdir$1("reports/overall", { recursive: true });
+                await writeFile$1("reports/overall/issues-report.md", generateIssuesReportMd(overallIssues, inputs.sonarProjectName));
+                await writeFile$1("reports/overall/hotspots-report.md", generateHotspotsReportMd(overallHotspots, inputs.sonarProjectName));
+                info(`Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`);
+            }
+            if (inputs.reportsScopes.includes("new")) {
+                info("Generating new-code reports …");
+                newIssues = await sq.fetchAllIssues(inputs.sonarProjectName, {
+                    createdInLast: inputs.newCodeNDays,
+                });
+                const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+                const days = parseInt(inputs.newCodeNDays, 10);
+                const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+                newHotspots = allHotspots.filter((h) => new Date(h.creationDate).getTime() >= cutoff);
+                await mkdir$1("reports/new", { recursive: true });
+                await writeFile$1("reports/new/issues-report.md", generateIssuesReportMd(newIssues, inputs.sonarProjectName));
+                await writeFile$1("reports/new/hotspots-report.md", generateHotspotsReportMd(newHotspots, inputs.sonarProjectName));
+                info(`New: ${newIssues.length} issues, ${newHotspots.length} hotspots`);
+            }
+        }
         // ── Step summary ──────────────────────────────────────────────
         const summary$1 = generateAnalysisSummary({
             metrics,
-            newIssues: [],
-            newHotspots: [],
+            newIssues,
+            newHotspots,
         });
         summary.addRaw(summary$1);
         await summary.write();

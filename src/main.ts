@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import * as core from "@actions/core";
 import {
   dockerNetworkCreate,
@@ -9,8 +9,10 @@ import {
   dockerStop,
 } from "./docker.js";
 import { parseInputs } from "./inputs.js";
+import { generateHotspotsReportMd, generateIssuesReportMd } from "./reports.js";
 import { SonarQube } from "./sonarqube.js";
 import { generateAnalysisSummary } from "./summary.js";
+import type { SonarHotspot, SonarIssue } from "./types.js";
 
 export async function run(): Promise<void> {
   const networkName = "sq-network";
@@ -111,11 +113,70 @@ export async function run(): Promise<void> {
     await writeFile(inputs.sonarMetricsPath, JSON.stringify(metrics, null, 2));
     core.info(`Metrics written to ${inputs.sonarMetricsPath}`);
 
+    // ── Reports (if requested) ────────────────────────────────────
+    let newIssues: SonarIssue[] = [];
+    let newHotspots: SonarHotspot[] = [];
+
+    if (inputs.reportsScopes.length > 0) {
+      core.info("Reindexing issues …");
+      await sq.reindexIssues(inputs.sonarProjectName);
+      await sq.waitForReindex(containerName, 300);
+      core.info("Reindex complete.");
+
+      if (inputs.reportsScopes.includes("overall")) {
+        core.info("Generating overall reports …");
+        const overallIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
+        const overallHotspots = await sq.fetchAllHotspots(
+          inputs.sonarProjectName,
+        );
+
+        await mkdir("reports/overall", { recursive: true });
+        await writeFile(
+          "reports/overall/issues-report.md",
+          generateIssuesReportMd(overallIssues, inputs.sonarProjectName),
+        );
+        await writeFile(
+          "reports/overall/hotspots-report.md",
+          generateHotspotsReportMd(overallHotspots, inputs.sonarProjectName),
+        );
+        core.info(
+          `Overall: ${overallIssues.length} issues, ${overallHotspots.length} hotspots`,
+        );
+      }
+
+      if (inputs.reportsScopes.includes("new")) {
+        core.info("Generating new-code reports …");
+        newIssues = await sq.fetchAllIssues(inputs.sonarProjectName, {
+          createdInLast: inputs.newCodeNDays,
+        });
+
+        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+        const days = parseInt(inputs.newCodeNDays, 10);
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        newHotspots = allHotspots.filter(
+          (h) => new Date(h.creationDate).getTime() >= cutoff,
+        );
+
+        await mkdir("reports/new", { recursive: true });
+        await writeFile(
+          "reports/new/issues-report.md",
+          generateIssuesReportMd(newIssues, inputs.sonarProjectName),
+        );
+        await writeFile(
+          "reports/new/hotspots-report.md",
+          generateHotspotsReportMd(newHotspots, inputs.sonarProjectName),
+        );
+        core.info(
+          `New: ${newIssues.length} issues, ${newHotspots.length} hotspots`,
+        );
+      }
+    }
+
     // ── Step summary ──────────────────────────────────────────────
     const summary = generateAnalysisSummary({
       metrics,
-      newIssues: [],
-      newHotspots: [],
+      newIssues,
+      newHotspots,
     });
     core.summary.addRaw(summary);
     await core.summary.write();
