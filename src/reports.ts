@@ -1,4 +1,4 @@
-import type { SonarIssue } from "./types.js";
+import type { SonarHotspot, SonarIssue } from "./types.js";
 
 /** Escape markdown table-breaking characters in a string */
 function escapeMd(value: string): string {

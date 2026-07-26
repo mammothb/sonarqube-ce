@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import { restoreDockerCache, saveDockerCache } from "./cache.js";
 import {
   dockerNetworkCreate,
   dockerNetworkRm,
@@ -24,11 +25,21 @@ export async function run(): Promise<void> {
     const inputs = parseInputs();
 
     // ── Docker setup ──────────────────────────────────────────────
-    core.info(`Pulling ${inputs.sonarServerImage} …`);
-    await dockerPull(inputs.sonarServerImage);
+    core.info("Checking Docker image cache …");
+    const cacheHit = await restoreDockerCache(
+      inputs.sonarServerImage,
+      inputs.sonarScannerImage,
+    );
 
-    core.info(`Pulling ${inputs.sonarScannerImage} …`);
-    await dockerPull(inputs.sonarScannerImage);
+    if (cacheHit) {
+      core.info("Cache hit — skipping pull.");
+    } else {
+      core.info(`Pulling ${inputs.sonarServerImage} …`);
+      await dockerPull(inputs.sonarServerImage);
+
+      core.info(`Pulling ${inputs.sonarScannerImage} …`);
+      await dockerPull(inputs.sonarScannerImage);
+    }
 
     core.info(`Creating network ${networkName} …`);
     await dockerNetworkCreate(networkName);
@@ -219,6 +230,16 @@ export async function run(): Promise<void> {
         });
         core.info("PR comment created.");
       }
+    }
+
+    // ── Cache save (only if cache miss) ────────────────────────────
+    if (!cacheHit) {
+      core.info("Saving Docker images to cache …");
+      await saveDockerCache(
+        inputs.sonarServerImage,
+        inputs.sonarScannerImage,
+      ).catch((err) => core.warning(`Cache save failed: ${err}`));
+      core.info("Cache saved.");
     }
   } catch (error) {
     if (error instanceof Error) {
