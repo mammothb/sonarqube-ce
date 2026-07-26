@@ -7,7 +7,7 @@ Run a SonarQube Community Edition code analysis in an ephemeral Docker container
 
 ```yaml
 - name: SonarQube Scan
-  uses: mammothb/sonarqube-ce@main
+  uses: mammothb/sonarqube-ce@v1
   with:
     reports-scopes: '["overall","new"]'
 ```
@@ -16,7 +16,7 @@ Run a SonarQube Community Edition code analysis in an ephemeral Docker container
 
 ```yaml
 - name: SonarQube Scan
-  uses: mammothb/sonarqube-ce@main
+  uses: mammothb/sonarqube-ce@v1
 ```
 
 ## Inputs
@@ -57,7 +57,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
-      - uses: mammothb/sonarqube-ce@main
+      - uses: mammothb/sonarqube-ce@v1
         with:
           generate-pr-comment: 'true'
           reports-scopes: '["overall","new"]'
@@ -83,7 +83,7 @@ Use `pre-scan-script` to install language toolchains or generate external
 analyzer reports before the scanner runs:
 
 ```yaml
-- uses: mammothb/sonarqube-ce@main
+- uses: mammothb/sonarqube-ce@v1
   with:
     pre-scan-script: |
       rustup component add clippy
