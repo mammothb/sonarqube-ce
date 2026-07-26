@@ -42,3 +42,6 @@ jobs:
       - name: Run Action
         id: test-action
         uses: ./
+      - name: Verify output
+        run: |
+          echo "analysis-summary length: ${{ steps.test-action.outputs.analysis-summary != '' }}"
