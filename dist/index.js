@@ -28311,6 +28311,11 @@ async function dockerNetworkCreate(name) {
 async function dockerNetworkRm(name) {
     await execAsync(`docker network rm ${escapeArg(name)}`);
 }
+/** Execute a command in a running container. Returns stdout. */
+async function dockerExec(container, cmd) {
+    const escaped = cmd.map(escapeArg).join(" ");
+    return await execAsync(`docker exec ${escapeArg(container)} ${escaped}`);
+}
 
 /** Read + validate all action inputs. Returns typed ActionInputs or throws. */
 function parseInputs() {
@@ -28584,6 +28589,41 @@ class SonarQube {
         } while (all.length < total);
         return all;
     }
+    // ── Reindex ─────────────────────────────────────────────────────
+    /** POST /api/issues/reindex?project=… (triggers async reindex) */
+    async reindexIssues(project) {
+        const url = `${this.baseUrl}/api/issues/reindex?project=${encodeURIComponent(project)}`;
+        const resp = await fetch(url, {
+            method: "POST",
+            headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+        });
+        if (!resp.ok) {
+            throw new Error(`issues/reindex failed [${resp.status}]: ${await resp.text()}`);
+        }
+    }
+    /**
+     * Poll docker exec grep on ce.log until ISSUE_SYNC SUCCESS,
+     * or throw after timeoutSec.
+     */
+    async waitForReindex(containerName, timeoutSec) {
+        const deadline = Date.now() + timeoutSec * 1000;
+        while (Date.now() < deadline) {
+            try {
+                await dockerExec(containerName, [
+                    "grep",
+                    "-q",
+                    "ISSUE_SYNC.*SUCCESS",
+                    "/opt/sonarqube/logs/ce.log",
+                ]);
+                return; // grep -q succeeded (exit 0 = match found)
+            }
+            catch {
+                // Match not found yet — retry
+            }
+            await new Promise((r) => setTimeout(r, 2000));
+        }
+        throw new Error(`Reindex did not complete within ${timeoutSec}s`);
+    }
     // ── Wait helpers ───────────────────────────────────────────────────
     /** Poll /api/system/status until UP, or throw after timeoutSec seconds */
     async waitForUp(timeoutSec) {
@@ -28651,6 +28691,20 @@ async function run() {
         const tokenSq = new SonarQube(baseUrl, { user: token, pass: "" });
         const tokenStatus = await tokenSq.systemStatus();
         info(`Token auth verified — system status: ${tokenStatus.status}`);
+        // ── Quality gate (no scan yet → NONE) ─────────────────────────
+        const qg = await sq.projectStatus(inputs.sonarProjectName);
+        info(`Quality gate status (pre-scan): ${qg.projectStatus.status}`);
+        // ── Reindex (no-op for empty project) ─────────────────────────
+        await sq.reindexIssues(inputs.sonarProjectName);
+        info("Reindex triggered.");
+        // ── Issues / Hotspots (empty without scan) ────────────────────
+        const allIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
+        info(`Issues (pre-scan): ${allIssues.length}`);
+        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+        info(`Hotspots (pre-scan): ${allHotspots.length}`);
+        // ── Metrics (component exists, no measures) ───────────────────
+        const metrics = await sq.measures(inputs.sonarProjectName, ["ncloc"]);
+        info(`Measures for ${metrics.component.key}: ${metrics.component.measures.length} metrics`);
     }
     catch (error) {
         if (error instanceof Error) {

@@ -1,3 +1,4 @@
+import { dockerExec } from "./docker.js";
 import type {
   SonarHotspot,
   SonarIssue,
@@ -273,6 +274,48 @@ export class SonarQube {
       page++;
     } while (all.length < total);
     return all;
+  }
+
+  // ── Reindex ─────────────────────────────────────────────────────
+
+  /** POST /api/issues/reindex?project=… (triggers async reindex) */
+  async reindexIssues(project: string): Promise<void> {
+    const url = `${this.baseUrl}/api/issues/reindex?project=${encodeURIComponent(project)}`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: basicAuth(this.auth.user, this.auth.pass) },
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `issues/reindex failed [${resp.status}]: ${await resp.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Poll docker exec grep on ce.log until ISSUE_SYNC SUCCESS,
+   * or throw after timeoutSec.
+   */
+  async waitForReindex(
+    containerName: string,
+    timeoutSec: number,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutSec * 1000;
+    while (Date.now() < deadline) {
+      try {
+        await dockerExec(containerName, [
+          "grep",
+          "-q",
+          "ISSUE_SYNC.*SUCCESS",
+          "/opt/sonarqube/logs/ce.log",
+        ]);
+        return; // grep -q succeeded (exit 0 = match found)
+      } catch {
+        // Match not found yet — retry
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`Reindex did not complete within ${timeoutSec}s`);
   }
 
   // ── Wait helpers ───────────────────────────────────────────────────

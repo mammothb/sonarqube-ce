@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SonarQube } from "../src/sonarqube.js";
 import type { SonarHotspot, SonarIssue, SonarMetrics } from "../src/types.js";
+
+const dockerExecMock = vi.fn();
+vi.mock("../src/docker.js", () => ({
+  dockerExec: (container: string, cmd: string[]) =>
+    dockerExecMock(container, cmd),
+}));
+
+import { SonarQube } from "../src/sonarqube.js";
 
 describe("SonarQube", () => {
   afterEach(() => {
@@ -897,6 +904,105 @@ describe("SonarQube", () => {
       const result = await sq.fetchAllHotspots("proj");
 
       expect(result).toHaveLength(0);
+    });
+  });
+
+  // ── reindexIssues ─────────────────────────────────────────────────
+
+  describe("reindexIssues", () => {
+    it("sends POST to issues/reindex with project", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      await sq.reindexIssues("my-project");
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(
+        "http://localhost:9000/api/issues/reindex?project=my-project",
+      );
+      expect(init.method).toBe("POST");
+    });
+
+    it("throws on non-OK response", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 404,
+          text: async () => "Project not found",
+        }),
+      );
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.reindexIssues("missing")).rejects.toThrow(
+        "issues/reindex failed [404]: Project not found",
+      );
+    });
+  });
+
+  // ── waitForReindex ───────────────────────────────────────────────
+
+  describe("waitForReindex", () => {
+    it("resolves when grep finds SUCCESS immediately", async () => {
+      dockerExecMock.mockResolvedValue(""); // grep -q found match
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(
+        sq.waitForReindex("sonar-server", 10),
+      ).resolves.toBeUndefined();
+
+      expect(dockerExecMock).toHaveBeenCalledOnce();
+      expect(dockerExecMock.mock.calls[0]).toEqual([
+        "sonar-server",
+        ["grep", "-q", "ISSUE_SYNC.*SUCCESS", "/opt/sonarqube/logs/ce.log"],
+      ]);
+    });
+
+    it("retries when grep fails (no match)", async () => {
+      dockerExecMock
+        .mockRejectedValueOnce(new Error("no match")) // first: not found
+        .mockResolvedValueOnce(""); // second: found
+
+      vi.stubGlobal("setTimeout", (fn: () => void) => fn());
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await sq.waitForReindex("sonar-server", 10);
+
+      expect(dockerExecMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws after timeout when grep never succeeds", async () => {
+      dockerExecMock.mockRejectedValue(new Error("no match"));
+      vi.stubGlobal("setTimeout", (fn: () => void) => fn());
+
+      const nowStub = vi.fn().mockReturnValueOnce(0).mockReturnValue(20000);
+      vi.stubGlobal("Date", { ...Date, now: nowStub });
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+
+      await expect(sq.waitForReindex("sonar-server", 10)).rejects.toThrow(
+        "Reindex did not complete within 10s",
+      );
     });
   });
 });

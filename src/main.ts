@@ -68,6 +68,27 @@ export async function run(): Promise<void> {
     const tokenSq = new SonarQube(baseUrl, { user: token, pass: "" });
     const tokenStatus = await tokenSq.systemStatus();
     core.info(`Token auth verified — system status: ${tokenStatus.status}`);
+
+    // ── Quality gate (no scan yet → NONE) ─────────────────────────
+    const qg = await sq.projectStatus(inputs.sonarProjectName);
+    core.info(`Quality gate status (pre-scan): ${qg.projectStatus.status}`);
+
+    // ── Reindex (no-op for empty project) ─────────────────────────
+    await sq.reindexIssues(inputs.sonarProjectName);
+    core.info("Reindex triggered.");
+
+    // ── Issues / Hotspots (empty without scan) ────────────────────
+    const allIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
+    core.info(`Issues (pre-scan): ${allIssues.length}`);
+
+    const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+    core.info(`Hotspots (pre-scan): ${allHotspots.length}`);
+
+    // ── Metrics (component exists, no measures) ───────────────────
+    const metrics = await sq.measures(inputs.sonarProjectName, ["ncloc"]);
+    core.info(
+      `Measures for ${metrics.component.key}: ${metrics.component.measures.length} metrics`,
+    );
   } catch (error) {
     if (error instanceof Error) {
       core.setFailed(error.message);
