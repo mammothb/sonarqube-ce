@@ -28694,9 +28694,6 @@ async function run() {
         // ── Quality gate (no scan yet → NONE) ─────────────────────────
         const qg = await sq.projectStatus(inputs.sonarProjectName);
         info(`Quality gate status (pre-scan): ${qg.projectStatus.status}`);
-        // ── Reindex (no-op for empty project) ─────────────────────────
-        await sq.reindexIssues(inputs.sonarProjectName);
-        info("Reindex triggered.");
         // ── Issues / Hotspots (empty without scan) ────────────────────
         const allIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
         info(`Issues (pre-scan): ${allIssues.length}`);

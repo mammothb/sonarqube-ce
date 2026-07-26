@@ -73,10 +73,6 @@ export async function run(): Promise<void> {
     const qg = await sq.projectStatus(inputs.sonarProjectName);
     core.info(`Quality gate status (pre-scan): ${qg.projectStatus.status}`);
 
-    // ── Reindex (no-op for empty project) ─────────────────────────
-    await sq.reindexIssues(inputs.sonarProjectName);
-    core.info("Reindex triggered.");
-
     // ── Issues / Hotspots (empty without scan) ────────────────────
     const allIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
     core.info(`Issues (pre-scan): ${allIssues.length}`);
