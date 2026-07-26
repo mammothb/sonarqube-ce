@@ -16,6 +16,7 @@
     "format:write": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome check .",
+    "check": "biome check --write . && biome ci .",
     "fix": "biome check --write .",
     "local-action": "npx @github/local-action . src/main.ts .env",
     "package": "rm -rf ./dist && rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
