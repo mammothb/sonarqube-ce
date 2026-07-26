@@ -79,6 +79,75 @@ export function generateIssuesReportMd(
   return `${lines.join("\n")}\n`;
 }
 
+// ── Hotspots ────────────────────────────────────────────────────────
+
+/** One-line probability badge */
+function probabilityBadge(probability: string): string {
+  switch (probability) {
+    case "HIGH":
+      return "🔴 HIGH";
+    case "MEDIUM":
+      return "🟡 MEDIUM";
+    case "LOW":
+      return "🟢 LOW";
+    default:
+      return probability;
+  }
+}
+
+/**
+ * Full hotspots report as a markdown table.
+ * Returns "No hotspots found." when the array is empty.
+ */
+export function generateHotspotsReportMd(
+  hotspots: SonarHotspot[],
+  projectName: string,
+): string {
+  if (hotspots.length === 0) {
+    return `# Security Hotspots Report — ${escapeMd(projectName)}\n\nNo hotspots found.`;
+  }
+
+  const lines: string[] = [
+    `# Security Hotspots Report — ${escapeMd(projectName)}`,
+    "",
+    "| Probability | Category | Rule | Message | Component | Line | Author |",
+    "|-------------|----------|------|---------|-----------|------|--------|",
+  ];
+
+  for (const h of hotspots) {
+    lines.push(
+      `| ${probabilityBadge(h.vulnerabilityProbability)} | ${escapeMd(h.securityCategory)} | ${escapeMd(h.ruleKey)} | ${escapeMd(h.message)} | ${escapeMd(filePath(h.component))} | ${h.line ?? "-"} | ${escapeMd(h.author ?? "-")} |`,
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Compact inline hotspots table for embedding in step summaries.
+ * Returns empty string when the array is empty.
+ */
+export function generateHotspotsSummaryMd(hotspots: SonarHotspot[]): string {
+  if (hotspots.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [
+    `#### Security Hotspots (${hotspots.length})`,
+    "",
+    "| Probability | Category | File | Message |",
+    "|-------------|----------|------|---------|",
+  ];
+
+  for (const h of hotspots) {
+    lines.push(
+      `| ${probabilityBadge(h.vulnerabilityProbability)} | ${escapeMd(h.securityCategory)} | ${escapeMd(filePath(h.component))} | ${escapeMd(h.message)} |`,
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * Compact inline issues table for embedding in step summaries.
  * Returns empty string when the array is empty.
