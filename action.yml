@@ -1,6 +1,6 @@
 name: 'SonarQube CE Scan'
 description: >
-  Ephemeral SonarQube Community Edition scan with Docker. No external server required. Analysis summary, reports, and PR comments.
+  SonarQube Community Edition scan with Docker. No external server required.
 
 branding:
   icon: 'target'
