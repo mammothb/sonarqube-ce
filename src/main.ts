@@ -176,6 +176,8 @@ export async function run(): Promise<void> {
     // ── Reports (if requested) ────────────────────────────────────
     let newIssues: SonarIssue[] = [];
     let newHotspots: SonarHotspot[] = [];
+    let newArtifactUrl: string | undefined;
+    let overallArtifactUrl: string | undefined;
 
     if (inputs.reportsScopes.length > 0) {
       core.info("Reindexing issues …");
@@ -232,8 +234,6 @@ export async function run(): Promise<void> {
       // Upload artifacts
       const artifact = new DefaultArtifactClient();
       const started = Date.now();
-      let newArtifactUrl: string | undefined;
-      let overallArtifactUrl: string | undefined;
 
       const { owner, repo } = github.context.repo;
       const runId = github.context.runId;

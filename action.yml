@@ -25,10 +25,12 @@ inputs:
   sonar-options:
     description: >
       Extra Sonar Scanner options (e.g. -Dsonar.rust.clippy.reportPaths=...)
+
     required: false
   pre-scan-script:
     description: >
       Path to script or inline script run before scan. Use for installing toolchains (e.g. rustup, clippy) or generating external analyzer reports.
+
     required: false
   generate-pr-comment:
     description: 'Post analysis summary as PR comment'
