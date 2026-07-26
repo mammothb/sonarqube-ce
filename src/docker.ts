@@ -7,10 +7,10 @@ function escapeArg(arg: string): string {
 }
 
 /** Promisified child_process.exec */
-// NOSONAR — all commands built internally with escaped args; this is the Docker CLI wrapper
 function execAsync(command: string): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(command, (error, stdout, stderr) => {
+      // NOSONAR — commands built internally with escaped args
       if (error) {
         reject(
           new Error(
@@ -113,9 +113,9 @@ export async function dockerLoad(inputPath: string): Promise<void> {
 
 /** Check whether a container or image exists (returns true/false, never throws) */
 export async function dockerInspect(name: string): Promise<boolean> {
-  // NOSONAR — name is escaped via escapeArg()
   return new Promise((resolve) => {
     exec(`docker inspect ${escapeArg(name)}`, (error) => {
+      // NOSONAR — name is escaped
       resolve(!error);
     });
   });

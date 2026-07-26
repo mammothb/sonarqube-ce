@@ -32,10 +32,9 @@ async function execPreScanScript(script: string): Promise<void> {
     await writeFile("/tmp/pre-scan.sh", script, { mode: 0o755 }); // NOSONAR — standard temp location
     cmd = "sh -e /tmp/pre-scan.sh";
   }
-
-  // NOSONAR — pre-scan script execution is the feature; users control the command
   await new Promise<void>((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
+      // NOSONAR — pre-scan script is the feature
       if (stdout) {
         core.info(stdout.trim());
       }
