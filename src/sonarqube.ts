@@ -85,14 +85,17 @@ export class SonarQube {
   // ── Projects ────────────────────────────────────────────────────
 
   /** POST /api/projects/create */
-  async createProject(name: string): Promise<void> {
+  async createProject(name: string, projectKey?: string): Promise<void> {
     const resp = await fetchWithRetry(`${this.baseUrl}/api/projects/create`, {
       method: "POST",
       headers: {
         Authorization: basicAuth(this.auth.user, this.auth.pass),
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ name, project: name }).toString(),
+      body: new URLSearchParams({
+        name,
+        project: projectKey ?? name,
+      }).toString(),
     });
     if (!resp.ok) {
       throw new Error(

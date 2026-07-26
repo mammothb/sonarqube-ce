@@ -282,17 +282,32 @@ describe("SonarQube", () => {
         user: "admin",
         pass: "Son@rless123",
       });
-      await sq.createProject("my-project");
+      await sq.createProject("my-project", "my-key");
 
       expect(fetchMock).toHaveBeenCalledOnce();
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe("http://localhost:9000/api/projects/create");
       expect(init.method).toBe("POST");
       expect(init.body).toContain("name=my-project");
-      expect(init.body).toContain("project=my-project");
+      expect(init.body).toContain("project=my-key");
       expect(init.headers.Authorization).toBe(
         `Basic ${Buffer.from("admin:Son@rless123").toString("base64")}`,
       );
+    });
+
+    it("uses name as project key when no key provided", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const sq = new SonarQube("http://localhost:9000", {
+        user: "admin",
+        pass: "admin",
+      });
+      await sq.createProject("my-project");
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init.body).toContain("name=my-project");
+      expect(init.body).toContain("project=my-project");
     });
 
     it("throws on non-OK response", async () => {

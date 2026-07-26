@@ -7,25 +7,13 @@ branding:
   color: 'blue'
 inputs:
   sonar-project-name:
-    description: 'SonarQube project name'
-    required: false
-    default: ${{ github.event.repository.name }}
-  sonar-project-key:
-    description: 'SonarQube project key'
+    description: 'SonarQube project name (also used as project key)'
     required: false
     default: ${{ github.event.repository.name }}
   sonar-source-path:
     description: 'Source path from git root'
     required: false
     default: '.'
-  sonar-metrics-path:
-    description: 'Path where metrics JSON is written'
-    required: false
-    default: './sonar-metrics.json'
-  sonar-instance-port:
-    description: 'SonarQube instance port'
-    required: false
-    default: '9234'
   sonar-server-image:
     description: 'SonarQube Community Edition Docker image'
     required: false
@@ -37,12 +25,10 @@ inputs:
   sonar-options:
     description: >
       Extra Sonar Scanner options (e.g. -Dsonar.rust.clippy.reportPaths=...)
-
     required: false
   pre-scan-script:
     description: >
       Path to script or inline script run before scan. Use for installing toolchains (e.g. rustup, clippy) or generating external analyzer reports.
-
     required: false
   generate-pr-comment:
     description: 'Post analysis summary as PR comment'

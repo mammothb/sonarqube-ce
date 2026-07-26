@@ -84,16 +84,17 @@ export async function run(): Promise<void> {
     core.info(`Creating network ${networkName} …`);
     await dockerNetworkCreate(networkName);
 
-    core.info(`Starting SonarQube on port ${inputs.sonarInstancePort} …`);
+    const sqPort = "9234";
+    core.info(`Starting SonarQube on port ${sqPort} …`);
     await dockerRun({
       image: inputs.sonarServerImage,
       name: containerName,
-      port: `${inputs.sonarInstancePort}:9000`,
+      port: `${sqPort}:9000`,
       network: networkName,
     });
 
     // ── SonarQube bootstrap ───────────────────────────────────────
-    const baseUrl = `http://localhost:${inputs.sonarInstancePort}`;
+    const baseUrl = `http://localhost:${sqPort}`;
     const sq = new SonarQube(baseUrl, { user: "admin", pass: "admin" });
 
     core.info("Waiting for SonarQube to boot (timeout: 180s) …");
@@ -106,9 +107,15 @@ export async function run(): Promise<void> {
     sq.setAuth({ user: "admin", pass: newPassword });
 
     // ── Project + Token ───────────────────────────────────────────
-    core.info(`Creating project "${inputs.sonarProjectName}" …`);
-    await sq.createProject(inputs.sonarProjectName);
-    await sq.setHomepage(inputs.sonarProjectName);
+    const projectKey = inputs.sonarProjectName.replace(
+      /[^a-zA-Z0-9._:-]+/g,
+      "-",
+    );
+    core.info(
+      `Creating project "${inputs.sonarProjectName}" (key: ${projectKey}) …`,
+    );
+    await sq.createProject(inputs.sonarProjectName, projectKey);
+    await sq.setHomepage(projectKey);
 
     core.info("Generating user token …");
     const token = await sq.generateToken(tokenName);
@@ -125,7 +132,7 @@ export async function run(): Promise<void> {
         SONAR_HOST_URL: `http://${containerName}:9000`,
         SONAR_TOKEN: token,
         SONAR_SCANNER_OPTS: [
-          `-Dsonar.projectKey=${inputs.sonarProjectName}`,
+          `-Dsonar.projectKey=${projectKey}`,
           `-Dsonar.sources=${inputs.sonarSourcePath}`,
           inputs.sonarOptions,
         ]
@@ -138,8 +145,8 @@ export async function run(): Promise<void> {
 
     // ── Quality gate ──────────────────────────────────────────────
     core.info("Waiting for quality gate (timeout: 120s) …");
-    await sq.waitForQualityGate(inputs.sonarProjectName, 120);
-    const qg = await sq.projectStatus(inputs.sonarProjectName);
+    await sq.waitForQualityGate(projectKey, 120);
+    const qg = await sq.projectStatus(projectKey);
     core.info(`Quality gate: ${qg.projectStatus.status}`);
 
     // ── Metrics ───────────────────────────────────────────────────
@@ -161,9 +168,10 @@ export async function run(): Promise<void> {
       "alert_status",
     ];
     core.info("Fetching metrics …");
-    const metrics = await sq.measures(inputs.sonarProjectName, metricKeys);
-    await writeFile(inputs.sonarMetricsPath, JSON.stringify(metrics, null, 2));
-    core.info(`Metrics written to ${inputs.sonarMetricsPath}`);
+    const metrics = await sq.measures(projectKey, metricKeys);
+    const metricsPath = "./sonar-metrics.json";
+    await writeFile(metricsPath, JSON.stringify(metrics, null, 2));
+    core.info(`Metrics written to ${metricsPath}`);
 
     // ── Reports (if requested) ────────────────────────────────────
     let newIssues: SonarIssue[] = [];
@@ -171,16 +179,14 @@ export async function run(): Promise<void> {
 
     if (inputs.reportsScopes.length > 0) {
       core.info("Reindexing issues …");
-      await sq.reindexIssues(inputs.sonarProjectName);
+      await sq.reindexIssues(projectKey);
       await sq.waitForReindex(containerName, 300);
       core.info("Reindex complete.");
 
       if (inputs.reportsScopes.includes("overall")) {
         core.info("Generating overall reports …");
-        const overallIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
-        const overallHotspots = await sq.fetchAllHotspots(
-          inputs.sonarProjectName,
-        );
+        const overallIssues = await sq.fetchAllIssues(projectKey);
+        const overallHotspots = await sq.fetchAllHotspots(projectKey);
 
         await mkdir("reports/overall", { recursive: true });
         await writeFile(
@@ -198,11 +204,11 @@ export async function run(): Promise<void> {
 
       if (inputs.reportsScopes.includes("new")) {
         core.info("Generating new-code reports …");
-        newIssues = await sq.fetchAllIssues(inputs.sonarProjectName, {
+        newIssues = await sq.fetchAllIssues(projectKey, {
           createdInLast: inputs.newCodeNDays,
         });
 
-        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
+        const allHotspots = await sq.fetchAllHotspots(projectKey);
         const days = parseInt(inputs.newCodeNDays, 10);
         const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
         newHotspots = allHotspots.filter(

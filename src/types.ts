@@ -66,10 +66,7 @@ export interface DockerRunOptions {
 /** All action inputs, parsed and validated */
 export interface ActionInputs {
   sonarProjectName: string;
-  sonarProjectKey: string;
   sonarSourcePath: string;
-  sonarMetricsPath: string;
-  sonarInstancePort: string;
   sonarServerImage: string;
   sonarScannerImage: string;
   sonarOptions: string;

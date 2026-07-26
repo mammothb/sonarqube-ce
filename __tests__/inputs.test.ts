@@ -15,10 +15,7 @@ const { parseInputs } = await import("../src/inputs.js");
 function mockInputs(overrides: Record<string, string> = {}) {
   const defaults: Record<string, string> = {
     "sonar-project-name": "myrepo",
-    "sonar-project-key": "myrepo",
     "sonar-source-path": ".",
-    "sonar-metrics-path": "./sonar-metrics.json",
-    "sonar-instance-port": "9234",
     "sonar-server-image": "sonarqube:25.5.0.107428-community",
     "sonar-scanner-image": "sonarsource/sonar-scanner-cli:11.3",
     "sonar-options": "",
@@ -47,10 +44,7 @@ describe("parseInputs", () => {
 
     expect(result).toEqual({
       sonarProjectName: "myrepo",
-      sonarProjectKey: "myrepo",
       sonarSourcePath: ".",
-      sonarMetricsPath: "./sonar-metrics.json",
-      sonarInstancePort: "9234",
       sonarServerImage: "sonarqube:25.5.0.107428-community",
       sonarScannerImage: "sonarsource/sonar-scanner-cli:11.3",
       sonarOptions: "",
@@ -67,10 +61,7 @@ describe("parseInputs", () => {
   it("passes through all values when set", () => {
     mockInputs({
       "sonar-project-name": "My Project",
-      "sonar-project-key": "my-project-key",
       "sonar-source-path": "src",
-      "sonar-metrics-path": "./out/metrics.json",
-      "sonar-instance-port": "9876",
       "sonar-server-image": "sonarqube:lts-community",
       "sonar-scanner-image": "sonarsource/sonar-scanner-cli:12.0",
       "sonar-options": "-Dsonar.verbose=true",
@@ -85,10 +76,7 @@ describe("parseInputs", () => {
 
     expect(result).toEqual({
       sonarProjectName: "My Project",
-      sonarProjectKey: "my-project-key",
       sonarSourcePath: "src",
-      sonarMetricsPath: "./out/metrics.json",
-      sonarInstancePort: "9876",
       sonarServerImage: "sonarqube:lts-community",
       sonarScannerImage: "sonarsource/sonar-scanner-cli:12.0",
       sonarOptions: "-Dsonar.verbose=true",
@@ -98,41 +86,6 @@ describe("parseInputs", () => {
       reportsScopes: ["overall", "new"],
       reportsRetentionDays: 14,
     });
-  });
-
-  // ── Port validation ───────────────────────────────────────────────
-
-  it("rejects non-numeric port", () => {
-    mockInputs({ "sonar-instance-port": "abc" });
-    expect(() => parseInputs()).toThrow(
-      'sonar-instance-port must be a numeric string, got: "abc"',
-    );
-  });
-
-  it("rejects port below 1024", () => {
-    mockInputs({ "sonar-instance-port": "80" });
-    expect(() => parseInputs()).toThrow(
-      "sonar-instance-port must be between 1024–65535",
-    );
-  });
-
-  it("rejects port above 65535", () => {
-    mockInputs({ "sonar-instance-port": "99999" });
-    expect(() => parseInputs()).toThrow(
-      "sonar-instance-port must be between 1024–65535",
-    );
-  });
-
-  it("accepts port at lower boundary (1024)", () => {
-    mockInputs({ "sonar-instance-port": "1024" });
-    expect(() => parseInputs()).not.toThrow();
-    expect(parseInputs().sonarInstancePort).toBe("1024");
-  });
-
-  it("accepts port at upper boundary (65535)", () => {
-    mockInputs({ "sonar-instance-port": "65535" });
-    expect(() => parseInputs()).not.toThrow();
-    expect(parseInputs().sonarInstancePort).toBe("65535");
   });
 
   // ── Server image validation ───────────────────────────────────────
