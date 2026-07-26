@@ -166,13 +166,19 @@ async function generateReports(
   return result;
 }
 
-async function postPrComment(summary: string): Promise<void> {
+async function postPrComment(summary: string, token: string): Promise<void> {
   if (github.context.eventName !== "pull_request") {
     return;
   }
 
+  if (!token) {
+    throw new Error(
+      "GITHUB_TOKEN is not set. Pass it via with.github-token or env.GITHUB_TOKEN. " +
+        "See https://github.com/mammothb/sonarqube-ce#pr-comments",
+    );
+  }
+
   core.info("Posting PR comment …");
-  const token = process.env.GITHUB_TOKEN ?? "";
   const octokit = github.getOctokit(token);
   const header = "## SonarQube Analysis Summary";
   const body = `${header}\n\n${summary}`;
@@ -344,7 +350,7 @@ export async function run(): Promise<void> {
 
     // ── PR comment ───────────────────────────────────────────────
     if (inputs.generatePrComment) {
-      await postPrComment(summary);
+      await postPrComment(summary, inputs.githubToken);
     }
 
     // ── Cache save (only if cache miss) ────────────────────────────

@@ -71,6 +71,7 @@ export interface ActionInputs {
   sonarScannerImage: string;
   sonarOptions: string;
   preScanScript: string;
+  githubToken: string;
   generatePrComment: boolean;
   newCodeNDays: string;
   reportsScopes: ("overall" | "new")[];

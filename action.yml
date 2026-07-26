@@ -32,6 +32,10 @@ inputs:
       Path to script or inline script run before scan. Use for installing toolchains (e.g. rustup, clippy) or generating external analyzer reports.
 
     required: false
+  github-token:
+    description: 'GitHub token for PR comments. Defaults to GITHUB_TOKEN env var.'
+    required: false
+    default: ''
   generate-pr-comment:
     description: 'Post analysis summary as PR comment'
     required: false

@@ -49,6 +49,7 @@ describe("parseInputs", () => {
       sonarScannerImage: "sonarsource/sonar-scanner-cli:11.3",
       sonarOptions: "",
       preScanScript: "",
+      githubToken: "",
       generatePrComment: false,
       newCodeNDays: "30d",
       reportsScopes: [],
@@ -81,6 +82,7 @@ describe("parseInputs", () => {
       sonarScannerImage: "sonarsource/sonar-scanner-cli:12.0",
       sonarOptions: "-Dsonar.verbose=true",
       preScanScript: "echo hello",
+      githubToken: "",
       generatePrComment: true,
       newCodeNDays: "60d",
       reportsScopes: ["overall", "new"],
@@ -187,5 +189,24 @@ describe("parseInputs", () => {
   it("returns empty string for preScanScript when not set", () => {
     mockInputs();
     expect(parseInputs().preScanScript).toBe("");
+  });
+
+  // ── github-token ──────────────────────────────────────────────────
+
+  it("returns github-token from input when set", () => {
+    mockInputs({ "github-token": "ghp_explicit" });
+    expect(parseInputs().githubToken).toBe("ghp_explicit");
+  });
+
+  it("falls back to GITHUB_TOKEN env var when input is empty", () => {
+    mockInputs();
+    vi.stubEnv("GITHUB_TOKEN", "ghp_from_env");
+    expect(parseInputs().githubToken).toBe("ghp_from_env");
+    vi.unstubAllEnvs();
+  });
+
+  it("returns empty string when neither input nor env is set", () => {
+    mockInputs();
+    expect(parseInputs().githubToken).toBe("");
   });
 });

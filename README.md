@@ -29,6 +29,7 @@ Run a SonarQube Community Edition code analysis in an ephemeral Docker container
 | `sonar-scanner-image` | No | `sonarsource/sonar-scanner-cli:11.3` | Scanner CLI Docker image |
 | `sonar-options` | No | | Extra Sonar Scanner options (`-Dsonar.rust.clippy.reportPaths=...`) |
 | `pre-scan-script` | No | | Path or inline script run before scan (installs toolchains, generates analyzer reports) |
+| `github-token` | No | `GITHUB_TOKEN` env var | GitHub token for PR comments |
 | `generate-pr-comment` | No | `false` | Post analysis summary as PR comment |
 | `new-code-n-days` | No | `30d` | Days for new-code period |
 | `reports-scopes` | No | `[]` | Report scopes: `["overall","new"]`, `["new"]`, or `[]` |
@@ -48,6 +49,9 @@ Set `generate-pr-comment: 'true'` and ensure the workflow has
 `pull-requests: write` permission. The action will create or update a bot
 comment with the analysis summary and artifact download links.
 
+The action needs a GitHub token to post comments. You can pass it via
+`with.github-token` **(recommended)** or `env.GITHUB_TOKEN`.
+
 ```yaml
 jobs:
   scan:
@@ -60,6 +64,7 @@ jobs:
       - uses: mammothb/sonarqube-ce@v1
         with:
           generate-pr-comment: 'true'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           reports-scopes: '["overall","new"]'
 ```
 

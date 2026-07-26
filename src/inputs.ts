@@ -10,6 +10,8 @@ export function parseInputs(): ActionInputs {
   const sonarScannerImage = core.getInput("sonar-scanner-image");
   const sonarOptions = core.getInput("sonar-options");
   const preScanScript = core.getInput("pre-scan-script");
+  const githubToken =
+    core.getInput("github-token") || process.env.GITHUB_TOKEN || "";
   const generatePrCommentRaw = core.getInput("generate-pr-comment");
   const newCodeNDays = core.getInput("new-code-n-days");
   const reportsScopesRaw = core.getInput("reports-scopes");
@@ -60,6 +62,7 @@ export function parseInputs(): ActionInputs {
     sonarScannerImage,
     sonarOptions,
     preScanScript,
+    githubToken,
     generatePrComment,
     newCodeNDays,
     reportsScopes,
