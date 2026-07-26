@@ -194,6 +194,28 @@ describe("generateAnalysisSummary", () => {
     expect(md).toContain("</details>");
   });
 
+  it("escapes backslash and pipe in issue messages", () => {
+    const md = generateAnalysisSummary({
+      metrics: metrics([]),
+      newIssues: [issue({ message: "path\\to\\file | bad" })],
+      newHotspots: [],
+    });
+
+    // backslash doubled, pipe escaped
+    expect(md).toContain("path\\\\to\\\\file \\| bad");
+  });
+
+  it("escapes backslash and backtick in hotspot messages", () => {
+    const md = generateAnalysisSummary({
+      metrics: metrics([]),
+      newIssues: [],
+      newHotspots: [hotspot({ message: "\\`unsafe\\`" })],
+    });
+
+    // backslash doubled, backtick escaped
+    expect(md).toContain("\\\\\\`unsafe\\\\\\`");
+  });
+
   it("includes collapsible new hotspots section", () => {
     const md = generateAnalysisSummary({
       metrics: metrics([]),

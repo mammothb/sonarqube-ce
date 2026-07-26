@@ -3,6 +3,7 @@ import type { SonarHotspot, SonarIssue } from "./types.js";
 /** Escape markdown table-breaking characters in a string */
 function escapeMd(value: string): string {
   return value
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
     .replace(/\*/g, "\\*")
     .replace(/_/g, "\\_")

@@ -94,6 +94,23 @@ describe("generateIssuesReportMd", () => {
     expect(md).toContain("\\>");
   });
 
+  it("escapes backslash before other special chars", () => {
+    const md = generateIssuesReportMd(
+      [issue({ message: "path\\to\\file | pipe" })],
+      "P",
+    );
+
+    // backslash itself gets doubled, then pipe gets escaped
+    expect(md).toContain("path\\\\to\\\\file \\| pipe");
+  });
+
+  it("escapes backslash before backtick", () => {
+    const md = generateIssuesReportMd([issue({ message: "\\`code\\`" })], "P");
+
+    // backslash doubled, backtick escaped: \\` → \\\\` (backslash-escaped backslash + backslash-escaped backtick)
+    expect(md).toContain("\\\\\\`code\\\\\\`");
+  });
+
   it("escapes markdown special characters in project name", () => {
     const md = generateIssuesReportMd([], "a | b * c");
     expect(md).toContain("a \\| b \\* c");
