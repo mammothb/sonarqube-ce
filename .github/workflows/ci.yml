@@ -35,12 +35,10 @@ jobs:
         id: npm-test
         run: npm test
   test-action:
-    name: GitHub Action Test
+    name: E2E — SonarQube Scan
     runs-on: ubuntu-latest
     steps:
       - *checkout
-      - name: GitHub Action Test
+      - name: Run Action
         id: test-action
         uses: ./
-        with:
-          sonar-server-image: "sonarqube:25.5.0.107428-community"

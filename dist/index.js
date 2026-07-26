@@ -1,8 +1,9 @@
+import { writeFile as writeFile$1 } from 'node:fs/promises';
 import * as os from 'os';
-import os__default from 'os';
-import 'crypto';
+import os__default, { EOL } from 'os';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
-import { promises } from 'fs';
+import { promises, constants as constants$5 } from 'fs';
 import 'path';
 import http from 'http';
 import https from 'https';
@@ -153,6 +154,36 @@ function escapeProperty(s) {
         .replace(/\n/g, '%0A')
         .replace(/:/g, '%3A')
         .replace(/,/g, '%2C');
+}
+
+// For internal use, subject to change.
+// We use any as a valid input type
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function issueFileCommand(command, message) {
+    const filePath = process.env[`GITHUB_${command}`];
+    if (!filePath) {
+        throw new Error(`Unable to find environment variable for file command ${command}`);
+    }
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing file at path: ${filePath}`);
+    }
+    fs.appendFileSync(filePath, `${toCommandValue(message)}${os.EOL}`, {
+        encoding: 'utf8'
+    });
+}
+function prepareKeyValueMessage(key, value) {
+    const delimiter = `ghadelimiter_${crypto.randomUUID()}`;
+    const convertedValue = toCommandValue(value);
+    // These should realistically never happen, but just in case someone finds a
+    // way to exploit uuid generation let's not allow keys or values that contain
+    // the delimiter.
+    if (key.includes(delimiter)) {
+        throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (convertedValue.includes(delimiter)) {
+        throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
+    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
 }
 
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
@@ -28113,7 +28144,7 @@ var MediaTypes;
     });
 };
 
-(undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -28123,6 +28154,268 @@ var MediaTypes;
     });
 };
 const { access, appendFile, writeFile } = promises;
+const SUMMARY_ENV_VAR = 'GITHUB_STEP_SUMMARY';
+class Summary {
+    constructor() {
+        this._buffer = '';
+    }
+    /**
+     * Finds the summary file path from the environment, rejects if env var is not found or file does not exist
+     * Also checks r/w permissions.
+     *
+     * @returns step summary file path
+     */
+    filePath() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._filePath) {
+                return this._filePath;
+            }
+            const pathFromEnv = process.env[SUMMARY_ENV_VAR];
+            if (!pathFromEnv) {
+                throw new Error(`Unable to find environment variable for $${SUMMARY_ENV_VAR}. Check if your runtime environment supports job summaries.`);
+            }
+            try {
+                yield access(pathFromEnv, constants$5.R_OK | constants$5.W_OK);
+            }
+            catch (_a) {
+                throw new Error(`Unable to access summary file: '${pathFromEnv}'. Check if the file has correct read/write permissions.`);
+            }
+            this._filePath = pathFromEnv;
+            return this._filePath;
+        });
+    }
+    /**
+     * Wraps content in an HTML tag, adding any HTML attributes
+     *
+     * @param {string} tag HTML tag to wrap
+     * @param {string | null} content content within the tag
+     * @param {[attribute: string]: string} attrs key-value list of HTML attributes to add
+     *
+     * @returns {string} content wrapped in HTML element
+     */
+    wrap(tag, content, attrs = {}) {
+        const htmlAttrs = Object.entries(attrs)
+            .map(([key, value]) => ` ${key}="${value}"`)
+            .join('');
+        if (!content) {
+            return `<${tag}${htmlAttrs}>`;
+        }
+        return `<${tag}${htmlAttrs}>${content}</${tag}>`;
+    }
+    /**
+     * Writes text in the buffer to the summary buffer file and empties buffer. Will append by default.
+     *
+     * @param {SummaryWriteOptions} [options] (optional) options for write operation
+     *
+     * @returns {Promise<Summary>} summary instance
+     */
+    write(options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const overwrite = !!(options === null || options === void 0 ? void 0 : options.overwrite);
+            const filePath = yield this.filePath();
+            const writeFunc = overwrite ? writeFile : appendFile;
+            yield writeFunc(filePath, this._buffer, { encoding: 'utf8' });
+            return this.emptyBuffer();
+        });
+    }
+    /**
+     * Clears the summary buffer and wipes the summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    clear() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.emptyBuffer().write({ overwrite: true });
+        });
+    }
+    /**
+     * Returns the current summary buffer as a string
+     *
+     * @returns {string} string of summary buffer
+     */
+    stringify() {
+        return this._buffer;
+    }
+    /**
+     * If the summary buffer is empty
+     *
+     * @returns {boolen} true if the buffer is empty
+     */
+    isEmptyBuffer() {
+        return this._buffer.length === 0;
+    }
+    /**
+     * Resets the summary buffer without writing to summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    emptyBuffer() {
+        this._buffer = '';
+        return this;
+    }
+    /**
+     * Adds raw text to the summary buffer
+     *
+     * @param {string} text content to add
+     * @param {boolean} [addEOL=false] (optional) append an EOL to the raw text (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addRaw(text, addEOL = false) {
+        this._buffer += text;
+        return addEOL ? this.addEOL() : this;
+    }
+    /**
+     * Adds the operating system-specific end-of-line marker to the buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addEOL() {
+        return this.addRaw(EOL);
+    }
+    /**
+     * Adds an HTML codeblock to the summary buffer
+     *
+     * @param {string} code content to render within fenced code block
+     * @param {string} lang (optional) language to syntax highlight code
+     *
+     * @returns {Summary} summary instance
+     */
+    addCodeBlock(code, lang) {
+        const attrs = Object.assign({}, (lang && { lang }));
+        const element = this.wrap('pre', this.wrap('code', code), attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML list to the summary buffer
+     *
+     * @param {string[]} items list of items to render
+     * @param {boolean} [ordered=false] (optional) if the rendered list should be ordered or not (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addList(items, ordered = false) {
+        const tag = ordered ? 'ol' : 'ul';
+        const listItems = items.map(item => this.wrap('li', item)).join('');
+        const element = this.wrap(tag, listItems);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML table to the summary buffer
+     *
+     * @param {SummaryTableCell[]} rows table rows
+     *
+     * @returns {Summary} summary instance
+     */
+    addTable(rows) {
+        const tableBody = rows
+            .map(row => {
+            const cells = row
+                .map(cell => {
+                if (typeof cell === 'string') {
+                    return this.wrap('td', cell);
+                }
+                const { header, data, colspan, rowspan } = cell;
+                const tag = header ? 'th' : 'td';
+                const attrs = Object.assign(Object.assign({}, (colspan && { colspan })), (rowspan && { rowspan }));
+                return this.wrap(tag, data, attrs);
+            })
+                .join('');
+            return this.wrap('tr', cells);
+        })
+            .join('');
+        const element = this.wrap('table', tableBody);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds a collapsable HTML details element to the summary buffer
+     *
+     * @param {string} label text for the closed state
+     * @param {string} content collapsable content
+     *
+     * @returns {Summary} summary instance
+     */
+    addDetails(label, content) {
+        const element = this.wrap('details', this.wrap('summary', label) + content);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML image tag to the summary buffer
+     *
+     * @param {string} src path to the image you to embed
+     * @param {string} alt text description of the image
+     * @param {SummaryImageOptions} options (optional) addition image attributes
+     *
+     * @returns {Summary} summary instance
+     */
+    addImage(src, alt, options) {
+        const { width, height } = options || {};
+        const attrs = Object.assign(Object.assign({}, (width && { width })), (height && { height }));
+        const element = this.wrap('img', null, Object.assign({ src, alt }, attrs));
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML section heading element
+     *
+     * @param {string} text heading text
+     * @param {number | string} [level=1] (optional) the heading level, default: 1
+     *
+     * @returns {Summary} summary instance
+     */
+    addHeading(text, level) {
+        const tag = `h${level}`;
+        const allowedTag = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)
+            ? tag
+            : 'h1';
+        const element = this.wrap(allowedTag, text);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML thematic break (<hr>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addSeparator() {
+        const element = this.wrap('hr', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML line break (<br>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addBreak() {
+        const element = this.wrap('br', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML blockquote to the summary buffer
+     *
+     * @param {string} text quote text
+     * @param {string} cite (optional) citation url
+     *
+     * @returns {Summary} summary instance
+     */
+    addQuote(text, cite) {
+        const attrs = Object.assign({}, (cite && { cite }));
+        const element = this.wrap('blockquote', text, attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML anchor tag to the summary buffer
+     *
+     * @param {string} text link text/content
+     * @param {string} href hyperlink
+     *
+     * @returns {Summary} summary instance
+     */
+    addLink(text, href) {
+        const element = this.wrap('a', text, { href });
+        return this.addRaw(element).addEOL();
+    }
+}
+const _summary = new Summary();
+const summary = _summary;
 
 (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -28217,6 +28510,21 @@ var ExitCode;
 function getInput(name, options) {
     const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
     return val.trim();
+}
+/**
+ * Sets the value of an output.
+ *
+ * @param     name     name of the output to set
+ * @param     value    value to store. Non-string values will be converted to a string via JSON.stringify
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function setOutput(name, value) {
+    const filePath = process.env['GITHUB_OUTPUT'] || '';
+    if (filePath) {
+        return issueFileCommand('OUTPUT', prepareKeyValueMessage(name, value));
+    }
+    process.stdout.write(os.EOL);
+    issueCommand('set-output', { name }, toCommandValue(value));
 }
 //-----------------------------------------------------------------------
 // Results
@@ -28645,28 +28953,177 @@ class SonarQube {
 }
 
 /**
- * Smoke-test orchestrator — validates Docker + SonarQube API in CI.
- * Replaced with full orchestrator in F13.
+ * Convert a SonarQube rating (1 = best, 5 = worst) to star display.
+ * 1 → ★★★★★, 5 → ★☆☆☆☆
  */
+function generateStars(rating) {
+    const rounded = Math.round(rating);
+    return "★".repeat(6 - rounded) + "☆".repeat(rounded - 1);
+}
+/** Build a lookup from metric key to value */
+function metricMap(metrics) {
+    const map = {};
+    for (const m of metrics.component.measures) {
+        map[m.metric] = m.value;
+    }
+    return map;
+}
+/** Format a number value (round to 1 decimal if float) */
+function fmt(val) {
+    const n = Number(val);
+    if (Number.isNaN(n)) {
+        return val;
+    }
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+/** Format a rating value to stars, or "-" if missing */
+function ratingStars(m, key) {
+    const val = m[key];
+    if (val === undefined || val === "") {
+        return "-";
+    }
+    return generateStars(Number(val));
+}
+/**
+ * Build the full analysis summary markdown string.
+ * Includes quality gate banner, new-code stats, overall metrics,
+ * collapsible issues/hotspots, and artifact download links.
+ */
+function generateAnalysisSummary(params) {
+    const { metrics, newIssues, newHotspots, newArtifactUrl, overallArtifactUrl, } = params;
+    const m = metricMap(metrics);
+    const lines = [];
+    // ── Quality gate banner ───────────────────────────────────────────
+    const qgStatus = m.alert_status ?? "NONE";
+    if (qgStatus === "OK") {
+        lines.push("## ✅ Quality Gate Passed", "", "All quality gate conditions are met.", "");
+    }
+    else if (qgStatus === "ERROR") {
+        lines.push("## ❌ Quality Gate Failed", "", "One or more quality gate conditions failed.", "");
+    }
+    else {
+        lines.push("## ⏳ Quality Gate — No Data", "", "No quality gate has been computed for this project yet.", "");
+    }
+    // ── New-code stats ───────────────────────────────────────────────
+    if (newIssues.length > 0 || newHotspots.length > 0) {
+        lines.push("### New Code", "");
+        lines.push("| Metric | Value |", "|--------|-------|");
+        if (newIssues.length > 0) {
+            lines.push(`| New Issues | ${newIssues.length} |`);
+        }
+        if (newHotspots.length > 0) {
+            lines.push(`| New Hotspots | ${newHotspots.length} |`);
+        }
+        lines.push("");
+    }
+    // ── Overall metrics ──────────────────────────────────────────────
+    lines.push("### Overall Metrics", "");
+    lines.push("| Metric | Value | Rating |", "|--------|-------|--------|");
+    const metricsTable = [
+        {
+            label: "Bugs",
+            value: fmt(m.bugs ?? "0"),
+            stars: ratingStars(m, "reliability_rating"),
+        },
+        {
+            label: "Vulnerabilities",
+            value: fmt(m.vulnerabilities ?? "0"),
+            stars: ratingStars(m, "security_rating"),
+        },
+        {
+            label: "Code Smells",
+            value: fmt(m.code_smells ?? "0"),
+            stars: ratingStars(m, "sqale_rating"),
+        },
+        {
+            label: "Coverage",
+            value: m.coverage ? `${fmt(m.coverage)}%` : "-",
+            stars: "-",
+        },
+        {
+            label: "Duplications",
+            value: m.duplicated_lines_density
+                ? `${fmt(m.duplicated_lines_density)}%`
+                : "-",
+            stars: "-",
+        },
+        { label: "Lines of Code", value: fmt(m.ncloc ?? "0"), stars: "-" },
+    ];
+    for (const row of metricsTable) {
+        if (row.value !== "-" || row.stars !== "-") {
+            lines.push(`| ${row.label} | ${row.value} | ${row.stars} |`);
+        }
+    }
+    lines.push("");
+    // ── Artifact links ───────────────────────────────────────────────
+    if (newArtifactUrl || overallArtifactUrl) {
+        lines.push("### Downloads", "");
+        if (newArtifactUrl) {
+            lines.push(`- [New Code Report](${newArtifactUrl})`);
+        }
+        if (overallArtifactUrl) {
+            lines.push(`- [Overall Report](${overallArtifactUrl})`);
+        }
+        lines.push("");
+    }
+    // ── Collapsible new issues ───────────────────────────────────────
+    if (newIssues.length > 0) {
+        lines.push("<details>");
+        lines.push(`<summary><b>New Issues (${newIssues.length})</b></summary>`);
+        lines.push("");
+        lines.push("| Severity | Type | File | Message |");
+        lines.push("|----------|------|------|---------|");
+        for (const issue of newIssues) {
+            const file = issue.component.includes(":")
+                ? issue.component.slice(issue.component.indexOf(":") + 1)
+                : issue.component;
+            lines.push(`| ${issue.severity} | ${issue.type} | ${file} | ${issue.message} |`);
+        }
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+    }
+    // ── Collapsible new hotspots ─────────────────────────────────────
+    if (newHotspots.length > 0) {
+        lines.push("<details>");
+        lines.push(`<summary><b>New Security Hotspots (${newHotspots.length})</b></summary>`);
+        lines.push("");
+        lines.push("| Probability | Category | File | Message |");
+        lines.push("|-------------|----------|------|---------|");
+        for (const h of newHotspots) {
+            const file = h.component.includes(":")
+                ? h.component.slice(h.component.indexOf(":") + 1)
+                : h.component;
+            lines.push(`| ${h.vulnerabilityProbability} | ${h.securityCategory} | ${file} | ${h.message} |`);
+        }
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+    }
+    return lines.join("\n");
+}
+
 async function run() {
     const networkName = "sq-network";
     const containerName = "sonar-server";
+    const tokenName = `scan-${Date.now()}`;
     try {
         const inputs = parseInputs();
         // ── Docker setup ──────────────────────────────────────────────
         info(`Pulling ${inputs.sonarServerImage} …`);
         await dockerPull(inputs.sonarServerImage);
+        info(`Pulling ${inputs.sonarScannerImage} …`);
+        await dockerPull(inputs.sonarScannerImage);
         info(`Creating network ${networkName} …`);
         await dockerNetworkCreate(networkName);
-        info(`Starting container on port ${inputs.sonarInstancePort} …`);
-        const containerId = await dockerRun({
+        info(`Starting SonarQube on port ${inputs.sonarInstancePort} …`);
+        await dockerRun({
             image: inputs.sonarServerImage,
             name: containerName,
             port: `${inputs.sonarInstancePort}:9000`,
             network: networkName,
         });
-        info(`Container ID: ${containerId}`);
-        // ── SonarQube API ─────────────────────────────────────────────
+        // ── SonarQube bootstrap ───────────────────────────────────────
         const baseUrl = `http://localhost:${inputs.sonarInstancePort}`;
         const sq = new SonarQube(baseUrl, { user: "admin", pass: "admin" });
         info("Waiting for SonarQube to boot (timeout: 180s) …");
@@ -28675,33 +29132,72 @@ async function run() {
         info("Changing default password …");
         const newPassword = "Son@rless123";
         await sq.changePassword(newPassword);
-        // Verify new credentials work
         sq.setAuth({ user: "admin", pass: newPassword });
-        const status = await sq.systemStatus();
-        info(`Password change verified — system status: ${status.status}`);
         // ── Project + Token ───────────────────────────────────────────
         info(`Creating project "${inputs.sonarProjectName}" …`);
         await sq.createProject(inputs.sonarProjectName);
         await sq.setHomepage(inputs.sonarProjectName);
-        info("Project created.");
         info("Generating user token …");
-        const token = await sq.generateToken("e2e-token");
+        const token = await sq.generateToken(tokenName);
         info(`Token: ${token.slice(0, 8)}…`);
-        // Verify token works for API access (token as username, empty password)
-        const tokenSq = new SonarQube(baseUrl, { user: token, pass: "" });
-        const tokenStatus = await tokenSq.systemStatus();
-        info(`Token auth verified — system status: ${tokenStatus.status}`);
-        // ── Quality gate (no scan yet → NONE) ─────────────────────────
+        // ── Scanner ───────────────────────────────────────────────────
+        const workspace = process.env.GITHUB_WORKSPACE ?? ".";
+        info("Running scanner …");
+        await dockerRun({
+            image: inputs.sonarScannerImage,
+            rm: true,
+            network: networkName,
+            env: {
+                SONAR_HOST_URL: `http://${containerName}:9000`,
+                SONAR_TOKEN: token,
+                SONAR_SCANNER_OPTS: [
+                    `-Dsonar.projectKey=${inputs.sonarProjectName}`,
+                    `-Dsonar.sources=${inputs.sonarSourcePath}`,
+                    inputs.sonarOptions,
+                ]
+                    .filter(Boolean)
+                    .join(" "),
+            },
+            volume: `${workspace}:/usr/src`,
+        });
+        info("Scanner finished.");
+        // ── Quality gate ──────────────────────────────────────────────
+        info("Waiting for quality gate (timeout: 120s) …");
+        await sq.waitForQualityGate(inputs.sonarProjectName, 120);
         const qg = await sq.projectStatus(inputs.sonarProjectName);
-        info(`Quality gate status (pre-scan): ${qg.projectStatus.status}`);
-        // ── Issues / Hotspots (empty without scan) ────────────────────
-        const allIssues = await sq.fetchAllIssues(inputs.sonarProjectName);
-        info(`Issues (pre-scan): ${allIssues.length}`);
-        const allHotspots = await sq.fetchAllHotspots(inputs.sonarProjectName);
-        info(`Hotspots (pre-scan): ${allHotspots.length}`);
-        // ── Metrics (component exists, no measures) ───────────────────
-        const metrics = await sq.measures(inputs.sonarProjectName, ["ncloc"]);
-        info(`Measures for ${metrics.component.key}: ${metrics.component.measures.length} metrics`);
+        info(`Quality gate: ${qg.projectStatus.status}`);
+        // ── Metrics ───────────────────────────────────────────────────
+        const metricKeys = [
+            "bugs",
+            "vulnerabilities",
+            "code_smells",
+            "quality_gate_details",
+            "violations",
+            "duplicated_lines_density",
+            "ncloc",
+            "coverage",
+            "reliability_rating",
+            "security_rating",
+            "security_review_rating",
+            "sqale_rating",
+            "security_hotspots",
+            "open_issues",
+            "alert_status",
+        ];
+        info("Fetching metrics …");
+        const metrics = await sq.measures(inputs.sonarProjectName, metricKeys);
+        await writeFile$1(inputs.sonarMetricsPath, JSON.stringify(metrics, null, 2));
+        info(`Metrics written to ${inputs.sonarMetricsPath}`);
+        // ── Step summary ──────────────────────────────────────────────
+        const summary$1 = generateAnalysisSummary({
+            metrics,
+            newIssues: [],
+            newHotspots: [],
+        });
+        summary.addRaw(summary$1);
+        await summary.write();
+        setOutput("analysis-summary", summary$1);
+        info("Step summary written.");
     }
     catch (error) {
         if (error instanceof Error) {
