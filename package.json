@@ -1,21 +1,10 @@
 {
-  "name": "typescript-action",
-  "description": "GitHub Actions TypeScript template",
-  "version": "0.0.0",
-  "author": "",
+  "name": "sonarqube-ce-action",
+  "description": "SonarQube CE Scan, Analysis, and Reports",
+  "version": "0.1.0",
+  "author": "mmb L",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
-  },
-  "keywords": [
-    "actions"
-  ],
   "exports": {
     ".": "./dist/index.js"
   },
@@ -24,44 +13,32 @@
   },
   "scripts": {
     "bundle": "npm run format:write && npm run package",
-    "ci-test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
-    "coverage": "npx make-coverage-badge --output-path ./badges/coverage.svg",
     "format:write": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome check .",
     "fix": "biome check --write .",
     "local-action": "npx @github/local-action . src/main.ts .env",
-    "package": "npx rimraf ./dist && npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
+    "package": "rm -rf ./dist && rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
     "package:watch": "npm run package -- --watch",
-    "test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
-    "all": "biome ci . && npm run test && npm run coverage && npm run package"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "all": "biome ci . && npm run test:coverage && npm run package"
   },
   "license": "MIT",
-  "overrides": {
-    "brace-expansion": "5.0.8",
-    "esbuild": "0.28.1",
-    "undici": "6.27.0"
-  },
   "dependencies": {
     "@actions/core": "^3.0.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
     "@github/local-action": "^7.0.1",
-    "@jest/globals": "^30.4.1",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
-    "@types/jest": "^30.0.0",
     "@types/node": "^26.1.1",
-    "jest": "^30.4.2",
-    "make-coverage-badge": "^1.2.0",
+    "@vitest/coverage-v8": "^3.1.1",
     "rollup": "^4.62.2",
-    "ts-jest": "^29.4.12",
-    "ts-jest-resolver": "^2.0.1",
-    "typescript": "^6.0.3"
-  },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "*"
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^3.1.1"
   }
 }
