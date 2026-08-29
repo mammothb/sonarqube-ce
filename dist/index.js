@@ -163175,6 +163175,9 @@ async function run() {
     const networkName = "sq-network";
     const containerName = "sonar-server";
     const tokenName = `scan-${Date.now()}`;
+    // When true (scan-mode: none reached the handoff point), the server must
+    // stay up for later steps, so cleanup is skipped.
+    let keepServer = false;
     try {
         const inputs = parseInputs();
         if (inputs.preScanScript) {
@@ -163220,6 +163223,21 @@ async function run() {
         debug("Generating user token …");
         const token = await sq.generateToken(tokenName);
         debug(`Token: ${token.slice(0, 8)}…`);
+        // ── Expose connection outputs (always) ────────────────────────
+        setSecret(token);
+        setOutput("sonar-host-url", baseUrl);
+        setOutput("sonar-project-key", projectKey);
+        setOutput("sonar-token", token);
+        // ── Server-only mode: hand off scanning to later steps ────────
+        if (inputs.scanMode === "none") {
+            if (inputs.sonarSourcePath !== ".") {
+                warning("sonar-source-path is ignored when scan-mode is none: the .NET scanner analyzes what the build compiles.");
+            }
+            saveState("projectKey", projectKey);
+            saveState("token", token);
+            keepServer = true;
+            return;
+        }
         // ── Scanner ───────────────────────────────────────────────────
         const workspace = process.env.GITHUB_WORKSPACE ?? ".";
         info("Running scanner …");
@@ -163256,7 +163274,9 @@ async function run() {
         }
     }
     finally {
-        await cleanup(containerName, networkName);
+        if (!keepServer) {
+            await cleanup(containerName, networkName);
+        }
     }
 }
 
