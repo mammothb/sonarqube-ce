@@ -162316,6 +162316,7 @@ function parseInputs() {
     const sonarSourcePath = getInput("sonar-source-path");
     const sonarServerImage = getInput("sonar-server-image");
     const sonarScannerImage = getInput("sonar-scanner-image");
+    const scanModeRaw = getInput("scan-mode") || "cli";
     const sonarOptions = getInput("sonar-options");
     const preScanScript = getInput("pre-scan-script");
     const githubToken = getInput("github-token") || process.env.GITHUB_TOKEN || "";
@@ -162327,6 +162328,11 @@ function parseInputs() {
     if (!sonarServerImage.includes("community")) {
         throw new Error(`sonar-server-image must be a Community Edition image (must contain "community"), got: "${sonarServerImage}"`);
     }
+    // ── Validate scan mode ───────────────────────────────────────────────
+    if (scanModeRaw !== "cli" && scanModeRaw !== "none") {
+        throw new Error(`scan-mode must be "cli" or "none", got: "${scanModeRaw}"`);
+    }
+    const scanMode = scanModeRaw;
     // ── Parse reports scopes ───────────────────────────────────────────
     let reportsScopes;
     try {
@@ -162357,6 +162363,7 @@ function parseInputs() {
         sonarSourcePath,
         sonarServerImage,
         sonarScannerImage,
+        scanMode,
         sonarOptions,
         preScanScript,
         githubToken,
@@ -163065,6 +163072,64 @@ async function postPrComment(summary, token) {
     }
 }
 // ── Main orchestration ───────────────────────────────────────────────
+/** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
+async function finalize(sq, inputs, projectKey, containerName) {
+    // ── Quality gate ──────────────────────────────────────────────
+    info("Waiting for quality gate (timeout: 120s) …");
+    await sq.waitForQualityGate(projectKey, 120);
+    const qg = await sq.projectStatus(projectKey);
+    info(`Quality gate: ${qg.projectStatus.status}`);
+    // ── Metrics ───────────────────────────────────────────────────
+    const metricKeys = [
+        "bugs",
+        "vulnerabilities",
+        "code_smells",
+        "quality_gate_details",
+        "violations",
+        "duplicated_lines_density",
+        "ncloc",
+        "coverage",
+        "reliability_rating",
+        "security_rating",
+        "security_review_rating",
+        "sqale_rating",
+        "security_hotspots",
+        "open_issues",
+        "alert_status",
+    ];
+    debug("Fetching metrics …");
+    const metrics = await sq.measures(projectKey, metricKeys);
+    const metricsPath = "./sonar-metrics.json";
+    await writeFile$1(metricsPath, JSON.stringify(metrics, null, 2));
+    info(`Metrics written to ${metricsPath}`);
+    // ── Reports ───────────────────────────────────────────────────
+    const { newIssues, newHotspots, newArtifactUrl, overallArtifactUrl } = await generateReports(sq, inputs, projectKey, containerName);
+    // ── Step summary ──────────────────────────────────────────────
+    const summary$1 = generateAnalysisSummary({
+        metrics,
+        newIssues,
+        newHotspots,
+        newArtifactUrl,
+        overallArtifactUrl,
+    });
+    summary.addRaw(summary$1);
+    await summary.write();
+    setOutput("analysis-summary", summary$1);
+    info("Step summary written.");
+    // ── PR comment ───────────────────────────────────────────────
+    if (inputs.generatePrComment) {
+        await postPrComment(summary$1, inputs.githubToken);
+    }
+}
+/** Tear down the SonarQube container and Docker network (best-effort). */
+async function cleanup(containerName, networkName) {
+    info(`Stopping ${containerName} …`);
+    await dockerStop(containerName).catch(() => { });
+    await dockerRm(containerName).catch(() => { });
+    debug(`Removing network ${networkName} …`);
+    await dockerNetworkRm(networkName).catch(() => { });
+    info("Cleanup complete.");
+}
 async function run() {
     const networkName = "sq-network";
     const containerName = "sonar-server";
@@ -163135,52 +163200,8 @@ async function run() {
             volume: `${workspace}:/usr/src`,
         });
         info("Scanner finished.");
-        // ── Quality gate ──────────────────────────────────────────────
-        info("Waiting for quality gate (timeout: 120s) …");
-        await sq.waitForQualityGate(projectKey, 120);
-        const qg = await sq.projectStatus(projectKey);
-        info(`Quality gate: ${qg.projectStatus.status}`);
-        // ── Metrics ───────────────────────────────────────────────────
-        const metricKeys = [
-            "bugs",
-            "vulnerabilities",
-            "code_smells",
-            "quality_gate_details",
-            "violations",
-            "duplicated_lines_density",
-            "ncloc",
-            "coverage",
-            "reliability_rating",
-            "security_rating",
-            "security_review_rating",
-            "sqale_rating",
-            "security_hotspots",
-            "open_issues",
-            "alert_status",
-        ];
-        debug("Fetching metrics …");
-        const metrics = await sq.measures(projectKey, metricKeys);
-        const metricsPath = "./sonar-metrics.json";
-        await writeFile$1(metricsPath, JSON.stringify(metrics, null, 2));
-        info(`Metrics written to ${metricsPath}`);
-        // ── Reports ───────────────────────────────────────────────────
-        const { newIssues, newHotspots, newArtifactUrl, overallArtifactUrl } = await generateReports(sq, inputs, projectKey, containerName);
-        // ── Step summary ──────────────────────────────────────────────
-        const summary$1 = generateAnalysisSummary({
-            metrics,
-            newIssues,
-            newHotspots,
-            newArtifactUrl,
-            overallArtifactUrl,
-        });
-        summary.addRaw(summary$1);
-        await summary.write();
-        setOutput("analysis-summary", summary$1);
-        info("Step summary written.");
-        // ── PR comment ───────────────────────────────────────────────
-        if (inputs.generatePrComment) {
-            await postPrComment(summary$1, inputs.githubToken);
-        }
+        // ── Finalize ──────────────────────────────────────────────────
+        await finalize(sq, inputs, projectKey, containerName);
         // ── Cache save (only if cache miss) ────────────────────────────
         if (!cacheHit) {
             debug("Saving Docker images to cache …");
@@ -163194,13 +163215,7 @@ async function run() {
         }
     }
     finally {
-        // ── Cleanup ───────────────────────────────────────────────────
-        info(`Stopping ${containerName} …`);
-        await dockerStop(containerName).catch(() => { });
-        await dockerRm(containerName).catch(() => { });
-        debug(`Removing network ${networkName} …`);
-        await dockerNetworkRm(networkName).catch(() => { });
-        info("Cleanup complete.");
+        await cleanup(containerName, networkName);
     }
 }
 

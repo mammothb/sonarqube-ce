@@ -211,6 +211,79 @@ async function postPrComment(summary: string, token: string): Promise<void> {
 
 // ── Main orchestration ───────────────────────────────────────────────
 
+/** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
+async function finalize(
+  sq: SonarQube,
+  inputs: ActionInputs,
+  projectKey: string,
+  containerName: string,
+): Promise<void> {
+  // ── Quality gate ──────────────────────────────────────────────
+  core.info("Waiting for quality gate (timeout: 120s) …");
+  await sq.waitForQualityGate(projectKey, 120);
+  const qg = await sq.projectStatus(projectKey);
+  core.info(`Quality gate: ${qg.projectStatus.status}`);
+
+  // ── Metrics ───────────────────────────────────────────────────
+  const metricKeys = [
+    "bugs",
+    "vulnerabilities",
+    "code_smells",
+    "quality_gate_details",
+    "violations",
+    "duplicated_lines_density",
+    "ncloc",
+    "coverage",
+    "reliability_rating",
+    "security_rating",
+    "security_review_rating",
+    "sqale_rating",
+    "security_hotspots",
+    "open_issues",
+    "alert_status",
+  ];
+  core.debug("Fetching metrics …");
+  const metrics = await sq.measures(projectKey, metricKeys);
+  const metricsPath = "./sonar-metrics.json";
+  await writeFile(metricsPath, JSON.stringify(metrics, null, 2));
+  core.info(`Metrics written to ${metricsPath}`);
+
+  // ── Reports ───────────────────────────────────────────────────
+  const { newIssues, newHotspots, newArtifactUrl, overallArtifactUrl } =
+    await generateReports(sq, inputs, projectKey, containerName);
+
+  // ── Step summary ──────────────────────────────────────────────
+  const summary = generateAnalysisSummary({
+    metrics,
+    newIssues,
+    newHotspots,
+    newArtifactUrl,
+    overallArtifactUrl,
+  });
+  core.summary.addRaw(summary);
+  await core.summary.write();
+  core.setOutput("analysis-summary", summary);
+  core.info("Step summary written.");
+
+  // ── PR comment ───────────────────────────────────────────────
+  if (inputs.generatePrComment) {
+    await postPrComment(summary, inputs.githubToken);
+  }
+}
+
+/** Tear down the SonarQube container and Docker network (best-effort). */
+async function cleanup(
+  containerName: string,
+  networkName: string,
+): Promise<void> {
+  core.info(`Stopping ${containerName} …`);
+  await dockerStop(containerName).catch(() => {});
+  await dockerRm(containerName).catch(() => {});
+  core.debug(`Removing network ${networkName} …`);
+  await dockerNetworkRm(networkName).catch(() => {});
+  core.info("Cleanup complete.");
+}
+
 export async function run(): Promise<void> {
   const networkName = "sq-network";
   const containerName = "sonar-server";
@@ -301,57 +374,8 @@ export async function run(): Promise<void> {
     });
     core.info("Scanner finished.");
 
-    // ── Quality gate ──────────────────────────────────────────────
-    core.info("Waiting for quality gate (timeout: 120s) …");
-    await sq.waitForQualityGate(projectKey, 120);
-    const qg = await sq.projectStatus(projectKey);
-    core.info(`Quality gate: ${qg.projectStatus.status}`);
-
-    // ── Metrics ───────────────────────────────────────────────────
-    const metricKeys = [
-      "bugs",
-      "vulnerabilities",
-      "code_smells",
-      "quality_gate_details",
-      "violations",
-      "duplicated_lines_density",
-      "ncloc",
-      "coverage",
-      "reliability_rating",
-      "security_rating",
-      "security_review_rating",
-      "sqale_rating",
-      "security_hotspots",
-      "open_issues",
-      "alert_status",
-    ];
-    core.debug("Fetching metrics …");
-    const metrics = await sq.measures(projectKey, metricKeys);
-    const metricsPath = "./sonar-metrics.json";
-    await writeFile(metricsPath, JSON.stringify(metrics, null, 2));
-    core.info(`Metrics written to ${metricsPath}`);
-
-    // ── Reports ───────────────────────────────────────────────────
-    const { newIssues, newHotspots, newArtifactUrl, overallArtifactUrl } =
-      await generateReports(sq, inputs, projectKey, containerName);
-
-    // ── Step summary ──────────────────────────────────────────────
-    const summary = generateAnalysisSummary({
-      metrics,
-      newIssues,
-      newHotspots,
-      newArtifactUrl,
-      overallArtifactUrl,
-    });
-    core.summary.addRaw(summary);
-    await core.summary.write();
-    core.setOutput("analysis-summary", summary);
-    core.info("Step summary written.");
-
-    // ── PR comment ───────────────────────────────────────────────
-    if (inputs.generatePrComment) {
-      await postPrComment(summary, inputs.githubToken);
-    }
+    // ── Finalize ──────────────────────────────────────────────────
+    await finalize(sq, inputs, projectKey, containerName);
 
     // ── Cache save (only if cache miss) ────────────────────────────
     if (!cacheHit) {
@@ -367,12 +391,6 @@ export async function run(): Promise<void> {
       core.setFailed(error.message);
     }
   } finally {
-    // ── Cleanup ───────────────────────────────────────────────────
-    core.info(`Stopping ${containerName} …`);
-    await dockerStop(containerName).catch(() => {});
-    await dockerRm(containerName).catch(() => {});
-    core.debug(`Removing network ${networkName} …`);
-    await dockerNetworkRm(networkName).catch(() => {});
-    core.info("Cleanup complete.");
+    await cleanup(containerName, networkName);
   }
 }
