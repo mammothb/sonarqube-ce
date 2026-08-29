@@ -211,6 +211,13 @@ async function postPrComment(summary: string, token: string): Promise<void> {
 
 // ── Main orchestration ───────────────────────────────────────────────
 
+// Shared between the `main` and `post` phases — both must target the same
+// server instance, port, and credentials.
+const NETWORK_NAME = "sq-network";
+const CONTAINER_NAME = "sonar-server";
+const SQ_PORT = "9234";
+const ADMIN_PASSWORD = "Son@rless123";
+
 /** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
 async function finalize(
   sq: SonarQube,
@@ -292,18 +299,33 @@ export function currentPhase(): "main" | "post" {
 /**
  * Entry point for the `post:` phase. Reads saved state and finalizes the scan.
  * No-op when no state was saved (e.g. `scan-mode: cli` already finalized
- * inline). Finalization + teardown are implemented in Phase 7.
+ * inline).
  */
 export async function runPost(): Promise<void> {
-  if (!core.getState("projectKey")) {
-    return;
+  const projectKey = core.getState("projectKey");
+  if (!projectKey) {
+    return; // Nothing to finalize — `scan-mode: cli` already finalized inline.
   }
-  // Phase 7: reconstruct SonarQube client, finalize, cleanup.
+
+  try {
+    const inputs = parseInputs();
+    const sq = new SonarQube(`http://localhost:${SQ_PORT}`, {
+      user: "admin",
+      pass: ADMIN_PASSWORD,
+    });
+
+    core.info("Finalizing scan …");
+    await finalize(sq, inputs, projectKey, CONTAINER_NAME);
+  } catch (error) {
+    if (error instanceof Error) {
+      core.setFailed(error.message);
+    }
+  } finally {
+    await cleanup(CONTAINER_NAME, NETWORK_NAME);
+  }
 }
 
 export async function run(): Promise<void> {
-  const networkName = "sq-network";
-  const containerName = "sonar-server";
   const tokenName = `scan-${Date.now()}`;
   // When true (scan-mode: none reached the handoff point), the server must
   // stay up for later steps, so cleanup is skipped.
@@ -346,20 +368,19 @@ export async function run(): Promise<void> {
       core.debug("Cache saved.");
     }
 
-    core.debug(`Creating network ${networkName} …`);
-    await dockerNetworkCreate(networkName);
+    core.debug(`Creating network ${NETWORK_NAME} …`);
+    await dockerNetworkCreate(NETWORK_NAME);
 
-    const sqPort = "9234";
-    core.debug(`Starting SonarQube on port ${sqPort} …`);
+    core.debug(`Starting SonarQube on port ${SQ_PORT} …`);
     await dockerRun({
       image: inputs.sonarServerImage,
-      name: containerName,
-      port: `${sqPort}:9000`,
-      network: networkName,
+      name: CONTAINER_NAME,
+      port: `${SQ_PORT}:9000`,
+      network: NETWORK_NAME,
     });
 
     // ── SonarQube bootstrap ───────────────────────────────────────
-    const baseUrl = `http://localhost:${sqPort}`;
+    const baseUrl = `http://localhost:${SQ_PORT}`;
     const sq = new SonarQube(baseUrl, { user: "admin", pass: "admin" });
 
     core.info("Waiting for SonarQube to boot (timeout: 180s) …");
@@ -367,9 +388,8 @@ export async function run(): Promise<void> {
     core.info("SonarQube is UP.");
 
     core.debug("Changing default password …");
-    const newPassword = "Son@rless123";
-    await sq.changePassword(newPassword);
-    sq.setAuth({ user: "admin", pass: newPassword });
+    await sq.changePassword(ADMIN_PASSWORD);
+    sq.setAuth({ user: "admin", pass: ADMIN_PASSWORD });
 
     // ── Project + Token ───────────────────────────────────────────
     const projectKey = inputs.sonarProjectName.replace(
@@ -411,9 +431,9 @@ export async function run(): Promise<void> {
     await dockerRun({
       image: inputs.sonarScannerImage,
       rm: true,
-      network: networkName,
+      network: NETWORK_NAME,
       env: {
-        SONAR_HOST_URL: `http://${containerName}:9000`,
+        SONAR_HOST_URL: `http://${CONTAINER_NAME}:9000`,
         SONAR_TOKEN: token,
         SONAR_SCANNER_OPTS: [
           `-Dsonar.projectKey=${projectKey}`,
@@ -428,7 +448,7 @@ export async function run(): Promise<void> {
     core.info("Scanner finished.");
 
     // ── Finalize ──────────────────────────────────────────────────
-    await finalize(sq, inputs, projectKey, containerName);
+    await finalize(sq, inputs, projectKey, CONTAINER_NAME);
 
     // ── Cache save (only if cache miss) ────────────────────────────
     if (!cacheHit) {
@@ -445,7 +465,7 @@ export async function run(): Promise<void> {
     }
   } finally {
     if (!keepServer) {
-      await cleanup(containerName, networkName);
+      await cleanup(CONTAINER_NAME, NETWORK_NAME);
     }
   }
 }
