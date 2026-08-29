@@ -22,6 +22,14 @@ inputs:
     description: 'Sonar Scanner CLI Docker image'
     required: false
     default: 'sonarsource/sonar-scanner-cli:11.3'
+  scan-mode:
+    description: >
+      Scan mode: 'cli' runs the scanner in this step (default); 'none' skips
+      the scan so you can run an external scanner (e.g. SonarScanner for .NET)
+      in a later step.
+
+    required: false
+    default: 'cli'
   sonar-options:
     description: >
       Extra Sonar Scanner options (e.g. -Dsonar.rust.clippy.reportPaths=...)
@@ -53,6 +61,12 @@ inputs:
     required: false
     default: '7'
 outputs:
+  sonar-host-url:
+    description: 'Host-reachable SonarQube URL for external scanners (e.g. http://localhost:9234)'
+  sonar-project-key:
+    description: 'SonarQube project key (sanitized from sonar-project-name)'
+  sonar-token:
+    description: 'Generated user token (valid only for the ephemeral server)'
   overall-reports-artifact-id:
     description: 'Overall reports artifact ID'
   new-reports-artifact-id:
@@ -62,3 +76,4 @@ outputs:
 runs:
   using: node24
   main: dist/index.js
+  post: dist/index.js
