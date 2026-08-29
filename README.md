@@ -129,18 +129,20 @@ jobs:
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: Scan
-        env:
-          SONAR_HOST_URL: ${{ steps.sonar.outputs.sonar-host-url }}
-          SONAR_TOKEN: ${{ steps.sonar.outputs.sonar-token }}
         run: |
           dotnet sonarscanner begin \
-            /k:"${{ steps.sonar.outputs.sonar-project-key }}"
+            /k:"${{ steps.sonar.outputs.sonar-project-key }}" \
+            /d:sonar.host.url="${{ steps.sonar.outputs.sonar-host-url }}" \
+            /d:sonar.token="${{ steps.sonar.outputs.sonar-token }}"
           dotnet build
-          dotnet sonarscanner end
+          dotnet sonarscanner end \
+            /d:sonar.token="${{ steps.sonar.outputs.sonar-token }}"
 ```
 
 Notes:
 
+- Pass `sonar.host.url` and `sonar.token` as `/d:` flags — the .NET scanner
+  does not read `SONAR_HOST_URL` / `SONAR_TOKEN` environment variables.
 - The action's `post` phase waits for the quality gate, fetches metrics,
   generates reports, and tears down the server at the **end of the job**, so
   the server stays up across your scan step.
