@@ -163111,6 +163111,25 @@ const NETWORK_NAME = "sq-network";
 const CONTAINER_NAME = "sonar-server";
 const SQ_PORT = "9234";
 const ADMIN_PASSWORD = "Son@rless123";
+/**
+ * Restore the Docker images from cache or pull them. Returns true on a cache
+ * hit (callers skip their own cache-save on a miss).
+ */
+async function pullImages(inputs, includeScanner) {
+    debug("Checking Docker image cache …");
+    const cacheHit = await restoreDockerCache(inputs.sonarServerImage, includeScanner ? inputs.sonarScannerImage : undefined);
+    if (cacheHit) {
+        info("Docker image cache hit — skipping pull.");
+        return cacheHit;
+    }
+    info(`Pulling ${inputs.sonarServerImage} …`);
+    await dockerPull(inputs.sonarServerImage);
+    if (includeScanner) {
+        debug(`Pulling ${inputs.sonarScannerImage} …`);
+        await dockerPull(inputs.sonarScannerImage);
+    }
+    return cacheHit;
+}
 /** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
 async function finalize(sq, inputs, projectKey, containerName) {
     // ── Quality gate ──────────────────────────────────────────────
@@ -163213,19 +163232,7 @@ async function run() {
         }
         // ── Docker setup ──────────────────────────────────────────────
         const isNone = inputs.scanMode === "none";
-        debug("Checking Docker image cache …");
-        const cacheHit = await restoreDockerCache(inputs.sonarServerImage, isNone ? undefined : inputs.sonarScannerImage);
-        if (cacheHit) {
-            info("Docker image cache hit — skipping pull.");
-        }
-        else {
-            info(`Pulling ${inputs.sonarServerImage} …`);
-            await dockerPull(inputs.sonarServerImage);
-            if (!isNone) {
-                debug(`Pulling ${inputs.sonarScannerImage} …`);
-                await dockerPull(inputs.sonarScannerImage);
-            }
-        }
+        const cacheHit = await pullImages(inputs, !isNone);
         // In server-only mode, cache the server image immediately: no scan
         // follows, and the CLI-mode cache save at the end is skipped by the
         // early return.
