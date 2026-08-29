@@ -1,6 +1,3 @@
-import { exec as exec$1 } from 'node:child_process';
-import fs$1, { mkdirSync, existsSync as existsSync$1 } from 'node:fs';
-import require$$5$5, { writeFile as writeFile$1, mkdir as mkdir$1 } from 'node:fs/promises';
 import * as os from 'os';
 import os__default, { EOL as EOL$1 } from 'os';
 import * as crypto from 'crypto';
@@ -40,6 +37,9 @@ import require$$1$5 from 'node:dns';
 import require$$5$3 from 'string_decoder';
 import * as child from 'child_process';
 import { setTimeout as setTimeout$1 } from 'timers';
+import { exec as exec$1 } from 'node:child_process';
+import fs$1, { mkdirSync, existsSync as existsSync$1 } from 'node:fs';
+import require$$5$5, { writeFile as writeFile$1, mkdir as mkdir$1 } from 'node:fs/promises';
 import * as require$$0$3 from 'stream';
 import require$$0__default$1, { Readable } from 'stream';
 import { createRequire } from 'node:module';
@@ -30213,6 +30213,32 @@ function warning(message, properties = {}) {
  */
 function info(message) {
     process.stdout.write(message + os.EOL);
+}
+//-----------------------------------------------------------------------
+// Wrapper action state
+//-----------------------------------------------------------------------
+/**
+ * Saves state for current action, the state can only be retrieved by this action's post job execution.
+ *
+ * @param     name     name of the state to store
+ * @param     value    value to store. Non-string values will be converted to a string via JSON.stringify
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function saveState(name, value) {
+    const filePath = process.env['GITHUB_STATE'] || '';
+    if (filePath) {
+        return issueFileCommand('STATE', prepareKeyValueMessage(name, value));
+    }
+    issueCommand('save-state', { name }, toCommandValue(value));
+}
+/**
+ * Gets the value of an state set by this action's main execution.
+ *
+ * @param     name     name of the state to get
+ * @returns   string
+ */
+function getState(name) {
+    return process.env[`STATE_${name}`] || '';
 }
 
 // Used for controlling the highWaterMark value of the zip that is being streamed
@@ -163130,6 +163156,21 @@ async function cleanup(containerName, networkName) {
     await dockerNetworkRm(networkName).catch(() => { });
     info("Cleanup complete.");
 }
+/** Detect whether the action is running in its `post:` phase. */
+function currentPhase() {
+    return getState("isPost") === "true" ? "post" : "main";
+}
+/**
+ * Entry point for the `post:` phase. Reads saved state and finalizes the scan.
+ * No-op when no state was saved (e.g. `scan-mode: cli` already finalized
+ * inline). Finalization + teardown are implemented in Phase 7.
+ */
+async function runPost() {
+    if (!getState("projectKey")) {
+        return;
+    }
+    // Phase 7: reconstruct SonarQube client, finalize, cleanup.
+}
 async function run() {
     const networkName = "sq-network";
     const containerName = "sonar-server";
@@ -163220,9 +163261,15 @@ async function run() {
 }
 
 /**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
+ * The entrypoint for the action. Dispatches to the `main` or `post` phase:
+ * `main` runs the scan; `post` (declared in action.yml) finalizes + cleans up.
  */
 /* istanbul ignore next */
-run();
+if (currentPhase() === "post") {
+    runPost();
+}
+else {
+    saveState("isPost", "true");
+    run();
+}
 //# sourceMappingURL=index.js.map

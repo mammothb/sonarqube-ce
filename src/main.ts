@@ -284,6 +284,23 @@ async function cleanup(
   core.info("Cleanup complete.");
 }
 
+/** Detect whether the action is running in its `post:` phase. */
+export function currentPhase(): "main" | "post" {
+  return core.getState("isPost") === "true" ? "post" : "main";
+}
+
+/**
+ * Entry point for the `post:` phase. Reads saved state and finalizes the scan.
+ * No-op when no state was saved (e.g. `scan-mode: cli` already finalized
+ * inline). Finalization + teardown are implemented in Phase 7.
+ */
+export async function runPost(): Promise<void> {
+  if (!core.getState("projectKey")) {
+    return;
+  }
+  // Phase 7: reconstruct SonarQube client, finalize, cleanup.
+}
+
 export async function run(): Promise<void> {
   const networkName = "sq-network";
   const containerName = "sonar-server";
