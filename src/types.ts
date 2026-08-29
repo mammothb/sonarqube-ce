@@ -69,6 +69,7 @@ export interface ActionInputs {
   sonarSourcePath: string;
   sonarServerImage: string;
   sonarScannerImage: string;
+  scanMode: "cli" | "none";
   sonarOptions: string;
   preScanScript: string;
   githubToken: string;

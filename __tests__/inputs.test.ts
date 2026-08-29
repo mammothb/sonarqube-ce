@@ -18,6 +18,7 @@ function mockInputs(overrides: Record<string, string> = {}) {
     "sonar-source-path": ".",
     "sonar-server-image": "sonarqube:25.5.0.107428-community",
     "sonar-scanner-image": "sonarsource/sonar-scanner-cli:11.3",
+    "scan-mode": "cli",
     "sonar-options": "",
     "pre-scan-script": "",
     "generate-pr-comment": "false",
@@ -47,6 +48,7 @@ describe("parseInputs", () => {
       sonarSourcePath: ".",
       sonarServerImage: "sonarqube:25.5.0.107428-community",
       sonarScannerImage: "sonarsource/sonar-scanner-cli:11.3",
+      scanMode: "cli",
       sonarOptions: "",
       preScanScript: "",
       githubToken: "",
@@ -65,6 +67,7 @@ describe("parseInputs", () => {
       "sonar-source-path": "src",
       "sonar-server-image": "sonarqube:lts-community",
       "sonar-scanner-image": "sonarsource/sonar-scanner-cli:12.0",
+      "scan-mode": "none",
       "sonar-options": "-Dsonar.verbose=true",
       "pre-scan-script": "echo hello",
       "generate-pr-comment": "true",
@@ -80,6 +83,7 @@ describe("parseInputs", () => {
       sonarSourcePath: "src",
       sonarServerImage: "sonarqube:lts-community",
       sonarScannerImage: "sonarsource/sonar-scanner-cli:12.0",
+      scanMode: "none",
       sonarOptions: "-Dsonar.verbose=true",
       preScanScript: "echo hello",
       githubToken: "",
@@ -104,6 +108,20 @@ describe("parseInputs", () => {
       "sonar-server-image": "sonarqube:25.5.0.107428-community",
     });
     expect(() => parseInputs()).not.toThrow();
+  });
+
+  // ── scanMode validation ────────────────────────────────────────────
+
+  it("falls back to cli when scan-mode is empty", () => {
+    mockInputs({ "scan-mode": "" });
+    expect(parseInputs().scanMode).toBe("cli");
+  });
+
+  it("rejects invalid scan-mode", () => {
+    mockInputs({ "scan-mode": "dotnet" });
+    expect(() => parseInputs()).toThrow(
+      'scan-mode must be "cli" or "none", got: "dotnet"',
+    );
   });
 
   // ── reportsScopes validation ──────────────────────────────────────

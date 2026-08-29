@@ -8,6 +8,7 @@ export function parseInputs(): ActionInputs {
   const sonarSourcePath = core.getInput("sonar-source-path");
   const sonarServerImage = core.getInput("sonar-server-image");
   const sonarScannerImage = core.getInput("sonar-scanner-image");
+  const scanModeRaw = core.getInput("scan-mode") || "cli";
   const sonarOptions = core.getInput("sonar-options");
   const preScanScript = core.getInput("pre-scan-script");
   const githubToken =
@@ -23,6 +24,12 @@ export function parseInputs(): ActionInputs {
       `sonar-server-image must be a Community Edition image (must contain "community"), got: "${sonarServerImage}"`,
     );
   }
+
+  // ── Validate scan mode ───────────────────────────────────────────────
+  if (scanModeRaw !== "cli" && scanModeRaw !== "none") {
+    throw new Error(`scan-mode must be "cli" or "none", got: "${scanModeRaw}"`);
+  }
+  const scanMode = scanModeRaw as "cli" | "none";
 
   // ── Parse reports scopes ───────────────────────────────────────────
   let reportsScopes: ("overall" | "new")[];
@@ -60,6 +67,7 @@ export function parseInputs(): ActionInputs {
     sonarSourcePath,
     sonarServerImage,
     sonarScannerImage,
+    scanMode,
     sonarOptions,
     preScanScript,
     githubToken,
