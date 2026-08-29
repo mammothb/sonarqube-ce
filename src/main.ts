@@ -317,10 +317,11 @@ export async function run(): Promise<void> {
     }
 
     // ── Docker setup ──────────────────────────────────────────────
+    const isNone = inputs.scanMode === "none";
     core.debug("Checking Docker image cache …");
     const cacheHit = await restoreDockerCache(
       inputs.sonarServerImage,
-      inputs.sonarScannerImage,
+      isNone ? undefined : inputs.sonarScannerImage,
     );
 
     if (cacheHit) {
@@ -328,8 +329,21 @@ export async function run(): Promise<void> {
     } else {
       core.info(`Pulling ${inputs.sonarServerImage} …`);
       await dockerPull(inputs.sonarServerImage);
-      core.debug(`Pulling ${inputs.sonarScannerImage} …`);
-      await dockerPull(inputs.sonarScannerImage);
+      if (!isNone) {
+        core.debug(`Pulling ${inputs.sonarScannerImage} …`);
+        await dockerPull(inputs.sonarScannerImage);
+      }
+    }
+
+    // In server-only mode, cache the server image immediately: no scan
+    // follows, and the CLI-mode cache save at the end is skipped by the
+    // early return.
+    if (isNone && !cacheHit) {
+      core.debug("Saving Docker images to cache …");
+      await saveDockerCache(inputs.sonarServerImage).catch((err) =>
+        core.warning(`Cache save failed: ${err}`),
+      );
+      core.debug("Cache saved.");
     }
 
     core.debug(`Creating network ${networkName} …`);

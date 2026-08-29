@@ -162305,9 +162305,12 @@ const CACHE_DIR = "/tmp/docker-cache"; // NOSONAR — standard temp dir for Dock
 function ensureCacheDir() {
     mkdirSync(CACHE_DIR, { recursive: true });
 }
-/** Build cache key from image versions */
+/** Build cache key from image versions (scanner image optional). */
 function cacheKey(serverImage, scannerImage) {
     const sv = serverImage.replace(/[/:]/g, "-");
+    if (scannerImage === undefined) {
+        return `sq-docker-${sv}`;
+    }
     const sc = scannerImage.replace(/[/:]/g, "-");
     return `sq-docker-${sv}-${sc}`;
 }
@@ -162320,7 +162323,9 @@ async function restoreDockerCache(serverImage, scannerImage) {
     const hit = await restoreCache([CACHE_DIR], key);
     if (hit) {
         await dockerLoad(`${CACHE_DIR}/server.tar`);
-        await dockerLoad(`${CACHE_DIR}/scanner.tar`);
+        if (scannerImage !== undefined) {
+            await dockerLoad(`${CACHE_DIR}/scanner.tar`);
+        }
     }
     return hit !== undefined;
 }
@@ -162331,7 +162336,9 @@ async function saveDockerCache(serverImage, scannerImage) {
     ensureCacheDir();
     const key = cacheKey(serverImage, scannerImage);
     await dockerSave(serverImage, `${CACHE_DIR}/server.tar`);
-    await dockerSave(scannerImage, `${CACHE_DIR}/scanner.tar`);
+    if (scannerImage !== undefined) {
+        await dockerSave(scannerImage, `${CACHE_DIR}/scanner.tar`);
+    }
     await saveCache([CACHE_DIR], key);
 }
 
@@ -163184,16 +163191,27 @@ async function run() {
             await execPreScanScript(inputs.preScanScript);
         }
         // ── Docker setup ──────────────────────────────────────────────
+        const isNone = inputs.scanMode === "none";
         debug("Checking Docker image cache …");
-        const cacheHit = await restoreDockerCache(inputs.sonarServerImage, inputs.sonarScannerImage);
+        const cacheHit = await restoreDockerCache(inputs.sonarServerImage, isNone ? undefined : inputs.sonarScannerImage);
         if (cacheHit) {
             info("Docker image cache hit — skipping pull.");
         }
         else {
             info(`Pulling ${inputs.sonarServerImage} …`);
             await dockerPull(inputs.sonarServerImage);
-            debug(`Pulling ${inputs.sonarScannerImage} …`);
-            await dockerPull(inputs.sonarScannerImage);
+            if (!isNone) {
+                debug(`Pulling ${inputs.sonarScannerImage} …`);
+                await dockerPull(inputs.sonarScannerImage);
+            }
+        }
+        // In server-only mode, cache the server image immediately: no scan
+        // follows, and the CLI-mode cache save at the end is skipped by the
+        // early return.
+        if (isNone && !cacheHit) {
+            debug("Saving Docker images to cache …");
+            await saveDockerCache(inputs.sonarServerImage).catch((err) => warning(`Cache save failed: ${err}`));
+            debug("Cache saved.");
         }
         debug(`Creating network ${networkName} …`);
         await dockerNetworkCreate(networkName);

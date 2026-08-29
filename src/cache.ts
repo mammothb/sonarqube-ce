@@ -9,9 +9,12 @@ function ensureCacheDir(): void {
   mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-/** Build cache key from image versions */
-function cacheKey(serverImage: string, scannerImage: string): string {
+/** Build cache key from image versions (scanner image optional). */
+function cacheKey(serverImage: string, scannerImage?: string): string {
   const sv = serverImage.replace(/[/:]/g, "-");
+  if (scannerImage === undefined) {
+    return `sq-docker-${sv}`;
+  }
   const sc = scannerImage.replace(/[/:]/g, "-");
   return `sq-docker-${sv}-${sc}`;
 }
@@ -22,13 +25,15 @@ function cacheKey(serverImage: string, scannerImage: string): string {
  */
 export async function restoreDockerCache(
   serverImage: string,
-  scannerImage: string,
+  scannerImage?: string,
 ): Promise<boolean> {
   const key = cacheKey(serverImage, scannerImage);
   const hit = await cache.restoreCache([CACHE_DIR], key);
   if (hit) {
     await dockerLoad(`${CACHE_DIR}/server.tar`);
-    await dockerLoad(`${CACHE_DIR}/scanner.tar`);
+    if (scannerImage !== undefined) {
+      await dockerLoad(`${CACHE_DIR}/scanner.tar`);
+    }
   }
   return hit !== undefined;
 }
@@ -38,11 +43,13 @@ export async function restoreDockerCache(
  */
 export async function saveDockerCache(
   serverImage: string,
-  scannerImage: string,
+  scannerImage?: string,
 ): Promise<void> {
   ensureCacheDir();
   const key = cacheKey(serverImage, scannerImage);
   await dockerSave(serverImage, `${CACHE_DIR}/server.tar`);
-  await dockerSave(scannerImage, `${CACHE_DIR}/scanner.tar`);
+  if (scannerImage !== undefined) {
+    await dockerSave(scannerImage, `${CACHE_DIR}/scanner.tar`);
+  }
   await cache.saveCache([CACHE_DIR], key);
 }
