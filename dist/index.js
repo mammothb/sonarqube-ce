@@ -163120,7 +163120,7 @@ async function pullImages(inputs, includeScanner) {
     const cacheHit = await restoreDockerCache(inputs.sonarServerImage, includeScanner ? inputs.sonarScannerImage : undefined);
     if (cacheHit) {
         info("Docker image cache hit — skipping pull.");
-        return cacheHit;
+        return true;
     }
     info(`Pulling ${inputs.sonarServerImage} …`);
     await dockerPull(inputs.sonarServerImage);
@@ -163128,7 +163128,7 @@ async function pullImages(inputs, includeScanner) {
         debug(`Pulling ${inputs.sonarScannerImage} …`);
         await dockerPull(inputs.sonarScannerImage);
     }
-    return cacheHit;
+    return false;
 }
 /** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
 async function finalize(sq, inputs, projectKey, containerName) {

@@ -234,7 +234,7 @@ async function pullImages(
 
   if (cacheHit) {
     core.info("Docker image cache hit — skipping pull.");
-    return cacheHit;
+    return true;
   }
 
   core.info(`Pulling ${inputs.sonarServerImage} …`);
@@ -243,7 +243,7 @@ async function pullImages(
     core.debug(`Pulling ${inputs.sonarScannerImage} …`);
     await dockerPull(inputs.sonarScannerImage);
   }
-  return cacheHit;
+  return false;
 }
 
 /** Finalize after a scan: quality gate, metrics, reports, summary, PR comment. */
